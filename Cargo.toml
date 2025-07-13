@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Teoh Han Hui <teohhanhui@gmail.com>", "Lee Siong Chan <leesiongchan@duck.com>", "Momo <luna.cloudberry@gmail.com>"]
+edition = "2024"
+rust-version = "1.87.0"
+description = "A functional and reactive framework"
+readme = "README.md"
+repository = "https://github.com/teohhanhui/cyclers"
+license = "MIT OR Apache-2.0"
+keywords = ["frp", "functional", "reactive"]
+categories = ["asynchronous"]
+
+[workspace.dependencies]
+anyhow = { version = "1.0.92", default-features = false }
+futures-concurrency = { version = "7.6.3", default-features = false }
+futures-core = { version = "0.3.0", default-features = false }
+futures-lite = { version = "2.5.0", default-features = false }
+futures-rx = { version = "0.2.1", default-features = false }
+tokio = { version = "1.45.0", default-features = false }
+tokio-stream = { version = "0.1.16", default-features = false }
+tokio-util = { version = "0.7.15", default-features = false }
+
+[workspace.lints.clippy]
+arithmetic_side_effects = "warn"
+unused_trait_names = "warn"
