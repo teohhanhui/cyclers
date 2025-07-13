@@ -28,7 +28,7 @@ pub trait Sinks {
 
     fn make_sink_proxies() -> (Self::SinkSenders, Self::SinkReceivers);
 
-    async fn replicate_many(self, sink_senders: Self::SinkSenders);
+    fn replicate_many(self, sink_senders: Self::SinkSenders) -> impl Future<Output = ()> + Send;
 }
 
 impl<F, Source1, Sink1> Main<(Source1,), (Sink1,)> for F
@@ -62,7 +62,8 @@ impl<Source1> Sources for (Source1,) where Source1: Source {}
 
 impl<Sink1> Sinks for (Sink1,)
 where
-    Sink1: Stream,
+    Sink1: Stream + Send,
+    Sink1::Item: Send,
 {
     type SinkReceivers = (ReceiverStream<Sink1::Item>,);
     type SinkSenders = (mpsc::Sender<Sink1::Item>,);
@@ -73,24 +74,31 @@ where
         ((tx1,), (ReceiverStream::new(rx1),))
     }
 
-    async fn replicate_many(self, sink_senders: Self::SinkSenders) {
-        (self.0.then(|x| {
-            let tx = sink_senders.0.clone();
-            async move {
-                let permit = tx.reserve().await.unwrap();
-                permit.send(x);
-            }
-        }),)
-            .merge()
-            .last()
-            .await;
+    #[allow(
+        clippy::manual_async_fn,
+        reason = "warning: use of `async fn` in public traits is discouraged as auto trait bounds \
+                  cannot be specified"
+    )]
+    fn replicate_many(self, sink_senders: Self::SinkSenders) -> impl Future<Output = ()> + Send {
+        async move {
+            (self.0.then(|x| {
+                let tx = sink_senders.0.clone();
+                async move {
+                    let permit = tx.reserve().await.unwrap();
+                    permit.send(x);
+                }
+            }),)
+                .merge()
+                .last()
+                .await;
+        }
     }
 }
 
 pub fn setup<M, Drv, Src, Snk, DrvIn>(
     main: M,
     drivers: Drv,
-) -> (/* Src, */ Snk, impl AsyncFnOnce(Snk))
+) -> (/* Src, Snk, */ impl AsyncFnOnce(),)
 where
     M: Main<Src, Snk>,
     Drv: Drivers<DrvIn, Sources = Src>,
@@ -99,8 +107,9 @@ where
 {
     let (sources, run) = setup_reusable(drivers);
     let sinks = main.call(sources);
+    let run = async move || run(sinks).await;
 
-    (/* sources, */ sinks, run)
+    (/* sources, sinks, */ run,)
 }
 
 pub fn setup_reusable<Drv, Src, Snk, DrvIn>(drivers: Drv) -> (Src, impl AsyncFnOnce(Snk))
@@ -126,7 +135,7 @@ where
     Src: Sources,
     Snk: Sinks<SinkReceivers = Drv::SinkProxies>,
 {
-    let (/* _sources, */ sinks, run) = setup(main, drivers);
+    let (/* _sources, _sinks, */ run,) = setup(main, drivers);
 
-    run(sinks).await
+    run().await
 }
