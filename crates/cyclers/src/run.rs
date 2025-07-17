@@ -28,7 +28,7 @@ pub trait Sinks {
 
     fn make_sink_proxies() -> (Self::SinkSenders, Self::SinkReceivers);
 
-    fn replicate_many(self, sink_senders: Self::SinkSenders) -> impl Future<Output = ()> + Send;
+    fn replicate_many(self, sink_senders: Self::SinkSenders) -> impl Future<Output = ()>;
 }
 
 impl<F, Source1, Sink1> Main<(Source1,), (Sink1,)> for F
@@ -74,6 +74,11 @@ where
         ((tx1,), (ReceiverStream::new(rx1),))
     }
 
+    #[allow(
+        refining_impl_trait,
+        reason = "the `Send` bound is not placed on the trait method, in order to allow \
+                  implementing the `Sinks` trait for `!Send` types"
+    )]
     #[allow(
         clippy::manual_async_fn,
         reason = "warning: use of `async fn` in public traits is discouraged as auto trait bounds \
