@@ -14,11 +14,10 @@ pub trait Main<Sources, Sinks> {
     fn call(self, sources: Sources) -> Sinks;
 }
 
-pub trait Drivers<Inputs> {
-    type Sinks: Sinks;
+pub trait Drivers<Sinks> {
     type Sources: Sources;
 
-    fn call(self, sinks: Self::Sinks) -> (Self::Sources, impl Future<Output = ()>);
+    fn call(self, sinks: Sinks) -> (Self::Sources, impl Future<Output = ()>);
 }
 
 pub trait Sources {}
@@ -149,19 +148,18 @@ impl_main!(
 
 macro_rules! impl_drivers {
     (
-        $(($idx:tt, ($t:ident, $driver:ident))),+
+        $(($idx:tt, ($sink:ident, $driver:ident))),+
     ) => {
-        impl<$($t,)+ $($driver,)+> Drivers<($($t,)+)> for ($($driver,)+)
+        impl<$($sink,)+ $($driver,)+> Drivers<($($sink,)+)> for ($($driver,)+)
         where
-            $($t: Send,)+
-            $($driver: Driver<ReceiverStream<$t>>,)+
+            $($sink: Stream,)+
+            $($driver: Driver<$sink>,)+
         {
-            type Sinks = ($(ReceiverStream<$t>,)+);
             type Sources = ($($driver::Source,)+);
 
             fn call(
                 self,
-                sinks: Self::Sinks,
+                sinks: ($($sink,)+),
             ) -> (Self::Sources, impl Future<Output = ()>) {
                 paste! {
                     $(
@@ -177,93 +175,93 @@ macro_rules! impl_drivers {
     };
 }
 
-impl_drivers!((0, (T1, D1)));
-impl_drivers!((0, (T1, D1)), (1, (T2, D2)));
-impl_drivers!((0, (T1, D1)), (1, (T2, D2)), (2, (T3, D3)));
-impl_drivers!((0, (T1, D1)), (1, (T2, D2)), (2, (T3, D3)), (3, (T4, D4)));
+impl_drivers!((0, (S1, D1)));
+impl_drivers!((0, (S1, D1)), (1, (S2, D2)));
+impl_drivers!((0, (S1, D1)), (1, (S2, D2)), (2, (S3, D3)));
+impl_drivers!((0, (S1, D1)), (1, (S2, D2)), (2, (S3, D3)), (3, (S4, D4)));
 impl_drivers!(
-    (0, (T1, D1)),
-    (1, (T2, D2)),
-    (2, (T3, D3)),
-    (3, (T4, D4)),
-    (4, (T5, D5))
+    (0, (S1, D1)),
+    (1, (S2, D2)),
+    (2, (S3, D3)),
+    (3, (S4, D4)),
+    (4, (S5, D5))
 );
 impl_drivers!(
-    (0, (T1, D1)),
-    (1, (T2, D2)),
-    (2, (T3, D3)),
-    (3, (T4, D4)),
-    (4, (T5, D5)),
-    (5, (T6, D6))
+    (0, (S1, D1)),
+    (1, (S2, D2)),
+    (2, (S3, D3)),
+    (3, (S4, D4)),
+    (4, (S5, D5)),
+    (5, (S6, D6))
 );
 impl_drivers!(
-    (0, (T1, D1)),
-    (1, (T2, D2)),
-    (2, (T3, D3)),
-    (3, (T4, D4)),
-    (4, (T5, D5)),
-    (5, (T6, D6)),
-    (6, (T7, D7))
+    (0, (S1, D1)),
+    (1, (S2, D2)),
+    (2, (S3, D3)),
+    (3, (S4, D4)),
+    (4, (S5, D5)),
+    (5, (S6, D6)),
+    (6, (S7, D7))
 );
 impl_drivers!(
-    (0, (T1, D1)),
-    (1, (T2, D2)),
-    (2, (T3, D3)),
-    (3, (T4, D4)),
-    (4, (T5, D5)),
-    (5, (T6, D6)),
-    (6, (T7, D7)),
-    (7, (T8, D8))
+    (0, (S1, D1)),
+    (1, (S2, D2)),
+    (2, (S3, D3)),
+    (3, (S4, D4)),
+    (4, (S5, D5)),
+    (5, (S6, D6)),
+    (6, (S7, D7)),
+    (7, (S8, D8))
 );
 impl_drivers!(
-    (0, (T1, D1)),
-    (1, (T2, D2)),
-    (2, (T3, D3)),
-    (3, (T4, D4)),
-    (4, (T5, D5)),
-    (5, (T6, D6)),
-    (6, (T7, D7)),
-    (7, (T8, D8)),
-    (8, (T9, D9))
+    (0, (S1, D1)),
+    (1, (S2, D2)),
+    (2, (S3, D3)),
+    (3, (S4, D4)),
+    (4, (S5, D5)),
+    (5, (S6, D6)),
+    (6, (S7, D7)),
+    (7, (S8, D8)),
+    (8, (S9, D9))
 );
 impl_drivers!(
-    (0, (T1, D1)),
-    (1, (T2, D2)),
-    (2, (T3, D3)),
-    (3, (T4, D4)),
-    (4, (T5, D5)),
-    (5, (T6, D6)),
-    (6, (T7, D7)),
-    (7, (T8, D8)),
-    (8, (T9, D9)),
-    (9, (T10, D10))
+    (0, (S1, D1)),
+    (1, (S2, D2)),
+    (2, (S3, D3)),
+    (3, (S4, D4)),
+    (4, (S5, D5)),
+    (5, (S6, D6)),
+    (6, (S7, D7)),
+    (7, (S8, D8)),
+    (8, (S9, D9)),
+    (9, (S10, D10))
 );
 impl_drivers!(
-    (0, (T1, D1)),
-    (1, (T2, D2)),
-    (2, (T3, D3)),
-    (3, (T4, D4)),
-    (4, (T5, D5)),
-    (5, (T6, D6)),
-    (6, (T7, D7)),
-    (7, (T8, D8)),
-    (8, (T9, D9)),
-    (9, (T10, D10)),
-    (10, (T11, D11))
+    (0, (S1, D1)),
+    (1, (S2, D2)),
+    (2, (S3, D3)),
+    (3, (S4, D4)),
+    (4, (S5, D5)),
+    (5, (S6, D6)),
+    (6, (S7, D7)),
+    (7, (S8, D8)),
+    (8, (S9, D9)),
+    (9, (S10, D10)),
+    (10, (S11, D11))
 );
 impl_drivers!(
-    (0, (T1, D1)),
-    (1, (T2, D2)),
-    (2, (T3, D3)),
-    (3, (T4, D4)),
-    (4, (T5, D5)),
-    (5, (T6, D6)),
-    (6, (T7, D7)),
-    (7, (T8, D8)),
-    (8, (T9, D9)),
-    (9, (T10, D10)),
-    (10, (T11, D11)),
-    (11, (T12, D12))
+    (0, (S1, D1)),
+    (1, (S2, D2)),
+    (2, (S3, D3)),
+    (3, (S4, D4)),
+    (4, (S5, D5)),
+    (5, (S6, D6)),
+    (6, (S7, D7)),
+    (7, (S8, D8)),
+    (8, (S9, D9)),
+    (9, (S10, D10)),
+    (10, (S11, D11)),
+    (11, (S12, D12))
 );
 
 macro_rules! impl_sources {
@@ -437,15 +435,15 @@ impl_sinks!(
     (11, Sink12)
 );
 
-pub fn setup<M, Drv, Src, Snk, DrvIn>(
+pub fn setup<M, Drv, Src, Snk, SnkProxy>(
     main: M,
     drivers: Drv,
 ) -> (/* Src, Snk, */ impl AsyncFnOnce(),)
 where
     M: Main<Src, Snk>,
-    Drv: Drivers<DrvIn, Sources = Src>,
+    Drv: Drivers<SnkProxy, Sources = Src>,
     Src: Sources,
-    Snk: Sinks<SinkReceivers = Drv::Sinks>,
+    Snk: Sinks<SinkReceivers = SnkProxy>,
 {
     let (sources, run) = setup_reusable(drivers);
     let sinks = main.call(sources);
@@ -454,11 +452,11 @@ where
     (/* sources, sinks, */ run,)
 }
 
-pub fn setup_reusable<Drv, Src, Snk, DrvIn>(drivers: Drv) -> (Src, impl AsyncFnOnce(Snk))
+pub fn setup_reusable<Drv, Src, Snk, SnkProxy>(drivers: Drv) -> (Src, impl AsyncFnOnce(Snk))
 where
-    Drv: Drivers<DrvIn, Sources = Src>,
+    Drv: Drivers<SnkProxy, Sources = Src>,
     Src: Sources,
-    Snk: Sinks<SinkReceivers = Drv::Sinks>,
+    Snk: Sinks<SinkReceivers = SnkProxy>,
 {
     let (sink_senders, sink_proxies) = Snk::make_sink_proxies();
     let (sources, drivers_fut) = drivers.call(sink_proxies);
@@ -470,12 +468,12 @@ where
     })
 }
 
-pub async fn run<M, Drv, Src, Snk, DrvIn>(main: M, drivers: Drv)
+pub async fn run<M, Drv, Src, Snk, SnkProxy>(main: M, drivers: Drv)
 where
     M: Main<Src, Snk>,
-    Drv: Drivers<DrvIn, Sources = Src>,
+    Drv: Drivers<SnkProxy, Sources = Src>,
     Src: Sources,
-    Snk: Sinks<SinkReceivers = Drv::Sinks>,
+    Snk: Sinks<SinkReceivers = SnkProxy>,
 {
     let (/* _sources, _sinks, */ run,) = setup(main, drivers);
 
