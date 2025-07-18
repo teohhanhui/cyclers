@@ -15,10 +15,10 @@ pub trait Main<Sources, Sinks> {
 }
 
 pub trait Drivers<Inputs> {
-    type SinkProxies;
+    type Sinks: Sinks;
     type Sources: Sources;
 
-    fn call(self, sink_proxies: Self::SinkProxies) -> (Self::Sources, impl Future<Output = ()>);
+    fn call(self, sinks: Self::Sinks) -> (Self::Sources, impl Future<Output = ()>);
 }
 
 pub trait Sources {}
@@ -153,18 +153,19 @@ macro_rules! impl_drivers {
     ) => {
         impl<$($t,)+ $($driver,)+> Drivers<($($t,)+)> for ($($driver,)+)
         where
+            $($t: Send,)+
             $($driver: Driver<ReceiverStream<$t>>,)+
         {
-            type SinkProxies = ($(ReceiverStream<$t>,)+);
+            type Sinks = ($(ReceiverStream<$t>,)+);
             type Sources = ($($driver::Source,)+);
 
             fn call(
                 self,
-                sink_proxies: Self::SinkProxies,
+                sinks: Self::Sinks,
             ) -> (Self::Sources, impl Future<Output = ()>) {
                 paste! {
                     $(
-                        let ([<source $idx>], [<fut $idx>]) = self.$idx.call(sink_proxies.$idx);
+                        let ([<source $idx>], [<fut $idx>]) = self.$idx.call(sinks.$idx);
                     )+
 
                     (($([<source $idx>],)+), async move {
@@ -444,7 +445,7 @@ where
     M: Main<Src, Snk>,
     Drv: Drivers<DrvIn, Sources = Src>,
     Src: Sources,
-    Snk: Sinks<SinkReceivers = Drv::SinkProxies>,
+    Snk: Sinks<SinkReceivers = Drv::Sinks>,
 {
     let (sources, run) = setup_reusable(drivers);
     let sinks = main.call(sources);
@@ -457,7 +458,7 @@ pub fn setup_reusable<Drv, Src, Snk, DrvIn>(drivers: Drv) -> (Src, impl AsyncFnO
 where
     Drv: Drivers<DrvIn, Sources = Src>,
     Src: Sources,
-    Snk: Sinks<SinkReceivers = Drv::SinkProxies>,
+    Snk: Sinks<SinkReceivers = Drv::Sinks>,
 {
     let (sink_senders, sink_proxies) = Snk::make_sink_proxies();
     let (sources, drivers_fut) = drivers.call(sink_proxies);
@@ -474,7 +475,7 @@ where
     M: Main<Src, Snk>,
     Drv: Drivers<DrvIn, Sources = Src>,
     Src: Sources,
-    Snk: Sinks<SinkReceivers = Drv::SinkProxies>,
+    Snk: Sinks<SinkReceivers = Drv::Sinks>,
 {
     let (/* _sources, _sinks, */ run,) = setup(main, drivers);
 
