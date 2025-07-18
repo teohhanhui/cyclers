@@ -34,7 +34,7 @@ pub trait Sinks {
 
 macro_rules! impl_main {
     (
-        $($idx:tt: ($source:ident, $sink:ident)),+
+        $(($idx:tt, ($source:ident, $sink:ident))),+
     ) => {
         impl<F, $($source,)+ $($sink,)+> Main<($($source,)+), ($($sink,)+)> for F
         where
@@ -49,22 +49,107 @@ macro_rules! impl_main {
     };
 }
 
-impl_main!(0: (Source1, Sink1));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4), 4: (Source5, Sink5));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4), 4: (Source5, Sink5), 5: (Source6, Sink6));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4), 4: (Source5, Sink5), 5: (Source6, Sink6), 6: (Source7, Sink7));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4), 4: (Source5, Sink5), 5: (Source6, Sink6), 6: (Source7, Sink7), 7: (Source8, Sink8));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4), 4: (Source5, Sink5), 5: (Source6, Sink6), 6: (Source7, Sink7), 7: (Source8, Sink8), 8: (Source9, Sink9));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4), 4: (Source5, Sink5), 5: (Source6, Sink6), 6: (Source7, Sink7), 7: (Source8, Sink8), 8: (Source9, Sink9), 9: (Source10, Sink10));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4), 4: (Source5, Sink5), 5: (Source6, Sink6), 6: (Source7, Sink7), 7: (Source8, Sink8), 8: (Source9, Sink9), 9: (Source10, Sink10), 10: (Source11, Sink11));
-impl_main!(0: (Source1, Sink1), 1: (Source2, Sink2), 2: (Source3, Sink3), 3: (Source4, Sink4), 4: (Source5, Sink5), 5: (Source6, Sink6), 6: (Source7, Sink7), 7: (Source8, Sink8), 8: (Source9, Sink9), 9: (Source10, Sink10), 10: (Source11, Sink11), 11: (Source12, Sink12));
+impl_main!((0, (Source1, Sink1)));
+impl_main!((0, (Source1, Sink1)), (1, (Source2, Sink2)));
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4)),
+    (4, (Source5, Sink5))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4)),
+    (4, (Source5, Sink5)),
+    (5, (Source6, Sink6))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4)),
+    (4, (Source5, Sink5)),
+    (5, (Source6, Sink6)),
+    (6, (Source7, Sink7))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4)),
+    (4, (Source5, Sink5)),
+    (5, (Source6, Sink6)),
+    (6, (Source7, Sink7)),
+    (7, (Source8, Sink8))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4)),
+    (4, (Source5, Sink5)),
+    (5, (Source6, Sink6)),
+    (6, (Source7, Sink7)),
+    (7, (Source8, Sink8)),
+    (8, (Source9, Sink9))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4)),
+    (4, (Source5, Sink5)),
+    (5, (Source6, Sink6)),
+    (6, (Source7, Sink7)),
+    (7, (Source8, Sink8)),
+    (8, (Source9, Sink9)),
+    (9, (Source10, Sink10))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4)),
+    (4, (Source5, Sink5)),
+    (5, (Source6, Sink6)),
+    (6, (Source7, Sink7)),
+    (7, (Source8, Sink8)),
+    (8, (Source9, Sink9)),
+    (9, (Source10, Sink10)),
+    (10, (Source11, Sink11))
+);
+impl_main!(
+    (0, (Source1, Sink1)),
+    (1, (Source2, Sink2)),
+    (2, (Source3, Sink3)),
+    (3, (Source4, Sink4)),
+    (4, (Source5, Sink5)),
+    (5, (Source6, Sink6)),
+    (6, (Source7, Sink7)),
+    (7, (Source8, Sink8)),
+    (8, (Source9, Sink9)),
+    (9, (Source10, Sink10)),
+    (10, (Source11, Sink11)),
+    (11, (Source12, Sink12))
+);
 
 macro_rules! impl_drivers {
     (
-        $($idx:tt: ($t:ident, $driver:ident)),+
+        $(($idx:tt, ($t:ident, $driver:ident))),+
     ) => {
         impl<$($t,)+ $($driver,)+> Drivers<($($t,)+)> for ($($driver,)+)
         where
@@ -91,18 +176,94 @@ macro_rules! impl_drivers {
     };
 }
 
-impl_drivers!(0: (T1, D1));
-impl_drivers!(0: (T1, D1), 1: (T2, D2));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4), 4: (T5, D5));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4), 4: (T5, D5), 5: (T6, D6));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4), 4: (T5, D5), 5: (T6, D6), 6: (T7, D7));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4), 4: (T5, D5), 5: (T6, D6), 6: (T7, D7), 7: (T8, D8));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4), 4: (T5, D5), 5: (T6, D6), 6: (T7, D7), 7: (T8, D8), 8: (T9, D9));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4), 4: (T5, D5), 5: (T6, D6), 6: (T7, D7), 7: (T8, D8), 8: (T9, D9), 9: (T10, D10));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4), 4: (T5, D5), 5: (T6, D6), 6: (T7, D7), 7: (T8, D8), 8: (T9, D9), 9: (T10, D10), 10: (T11, D11));
-impl_drivers!(0: (T1, D1), 1: (T2, D2), 2: (T3, D3), 3: (T4, D4), 4: (T5, D5), 5: (T6, D6), 6: (T7, D7), 7: (T8, D8), 8: (T9, D9), 9: (T10, D10), 10: (T11, D11), 11: (T12, D12));
+impl_drivers!((0, (T1, D1)));
+impl_drivers!((0, (T1, D1)), (1, (T2, D2)));
+impl_drivers!((0, (T1, D1)), (1, (T2, D2)), (2, (T3, D3)));
+impl_drivers!((0, (T1, D1)), (1, (T2, D2)), (2, (T3, D3)), (3, (T4, D4)));
+impl_drivers!(
+    (0, (T1, D1)),
+    (1, (T2, D2)),
+    (2, (T3, D3)),
+    (3, (T4, D4)),
+    (4, (T5, D5))
+);
+impl_drivers!(
+    (0, (T1, D1)),
+    (1, (T2, D2)),
+    (2, (T3, D3)),
+    (3, (T4, D4)),
+    (4, (T5, D5)),
+    (5, (T6, D6))
+);
+impl_drivers!(
+    (0, (T1, D1)),
+    (1, (T2, D2)),
+    (2, (T3, D3)),
+    (3, (T4, D4)),
+    (4, (T5, D5)),
+    (5, (T6, D6)),
+    (6, (T7, D7))
+);
+impl_drivers!(
+    (0, (T1, D1)),
+    (1, (T2, D2)),
+    (2, (T3, D3)),
+    (3, (T4, D4)),
+    (4, (T5, D5)),
+    (5, (T6, D6)),
+    (6, (T7, D7)),
+    (7, (T8, D8))
+);
+impl_drivers!(
+    (0, (T1, D1)),
+    (1, (T2, D2)),
+    (2, (T3, D3)),
+    (3, (T4, D4)),
+    (4, (T5, D5)),
+    (5, (T6, D6)),
+    (6, (T7, D7)),
+    (7, (T8, D8)),
+    (8, (T9, D9))
+);
+impl_drivers!(
+    (0, (T1, D1)),
+    (1, (T2, D2)),
+    (2, (T3, D3)),
+    (3, (T4, D4)),
+    (4, (T5, D5)),
+    (5, (T6, D6)),
+    (6, (T7, D7)),
+    (7, (T8, D8)),
+    (8, (T9, D9)),
+    (9, (T10, D10))
+);
+impl_drivers!(
+    (0, (T1, D1)),
+    (1, (T2, D2)),
+    (2, (T3, D3)),
+    (3, (T4, D4)),
+    (4, (T5, D5)),
+    (5, (T6, D6)),
+    (6, (T7, D7)),
+    (7, (T8, D8)),
+    (8, (T9, D9)),
+    (9, (T10, D10)),
+    (10, (T11, D11))
+);
+impl_drivers!(
+    (0, (T1, D1)),
+    (1, (T2, D2)),
+    (2, (T3, D3)),
+    (3, (T4, D4)),
+    (4, (T5, D5)),
+    (5, (T6, D6)),
+    (6, (T7, D7)),
+    (7, (T8, D8)),
+    (8, (T9, D9)),
+    (9, (T10, D10)),
+    (10, (T11, D11)),
+    (11, (T12, D12))
+);
 
 macro_rules! impl_sources {
     (
@@ -141,7 +302,7 @@ impl_sources!(
 
 macro_rules! impl_sinks {
     (
-        $($idx:tt: $sink:ident),+
+        $(($idx:tt, $sink:ident)),+
     ) => {
         impl<$($sink,)+> Sinks for ($($sink,)+)
         where
@@ -168,8 +329,8 @@ macro_rules! impl_sinks {
             )]
             #[allow(
                 clippy::manual_async_fn,
-                reason = "warning: use of `async fn` in public traits is discouraged as auto trait bounds \
-                          cannot be specified"
+                reason = "warning: use of `async fn` in public traits is discouraged as auto trait \
+                          bounds cannot be specified"
             )]
             fn replicate_many(
                 self,
@@ -192,18 +353,88 @@ macro_rules! impl_sinks {
     };
 }
 
-impl_sinks!(0: Sink1);
-impl_sinks!(0: Sink1, 1: Sink2);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4, 4: Sink5);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4, 4: Sink5, 5: Sink6);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4, 4: Sink5, 5: Sink6, 6: Sink7);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4, 4: Sink5, 5: Sink6, 6: Sink7, 7: Sink8);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4, 4: Sink5, 5: Sink6, 6: Sink7, 7: Sink8, 8: Sink9);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4, 4: Sink5, 5: Sink6, 6: Sink7, 7: Sink8, 8: Sink9, 9: Sink10);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4, 4: Sink5, 5: Sink6, 6: Sink7, 7: Sink8, 8: Sink9, 9: Sink10, 10: Sink11);
-impl_sinks!(0: Sink1, 1: Sink2, 2: Sink3, 3: Sink4, 4: Sink5, 5: Sink6, 6: Sink7, 7: Sink8, 8: Sink9, 9: Sink10, 10: Sink11, 11: Sink12);
+impl_sinks!((0, Sink1));
+impl_sinks!((0, Sink1), (1, Sink2));
+impl_sinks!((0, Sink1), (1, Sink2), (2, Sink3));
+impl_sinks!((0, Sink1), (1, Sink2), (2, Sink3), (3, Sink4));
+impl_sinks!((0, Sink1), (1, Sink2), (2, Sink3), (3, Sink4), (4, Sink5));
+impl_sinks!(
+    (0, Sink1),
+    (1, Sink2),
+    (2, Sink3),
+    (3, Sink4),
+    (4, Sink5),
+    (5, Sink6)
+);
+impl_sinks!(
+    (0, Sink1),
+    (1, Sink2),
+    (2, Sink3),
+    (3, Sink4),
+    (4, Sink5),
+    (5, Sink6),
+    (6, Sink7)
+);
+impl_sinks!(
+    (0, Sink1),
+    (1, Sink2),
+    (2, Sink3),
+    (3, Sink4),
+    (4, Sink5),
+    (5, Sink6),
+    (6, Sink7),
+    (7, Sink8)
+);
+impl_sinks!(
+    (0, Sink1),
+    (1, Sink2),
+    (2, Sink3),
+    (3, Sink4),
+    (4, Sink5),
+    (5, Sink6),
+    (6, Sink7),
+    (7, Sink8),
+    (8, Sink9)
+);
+impl_sinks!(
+    (0, Sink1),
+    (1, Sink2),
+    (2, Sink3),
+    (3, Sink4),
+    (4, Sink5),
+    (5, Sink6),
+    (6, Sink7),
+    (7, Sink8),
+    (8, Sink9),
+    (9, Sink10)
+);
+impl_sinks!(
+    (0, Sink1),
+    (1, Sink2),
+    (2, Sink3),
+    (3, Sink4),
+    (4, Sink5),
+    (5, Sink6),
+    (6, Sink7),
+    (7, Sink8),
+    (8, Sink9),
+    (9, Sink10),
+    (10, Sink11)
+);
+impl_sinks!(
+    (0, Sink1),
+    (1, Sink2),
+    (2, Sink3),
+    (3, Sink4),
+    (4, Sink5),
+    (5, Sink6),
+    (6, Sink7),
+    (7, Sink8),
+    (8, Sink9),
+    (9, Sink10),
+    (10, Sink11),
+    (11, Sink12)
+);
 
 pub fn setup<M, Drv, Src, Snk, DrvIn>(
     main: M,
