@@ -7,3 +7,4 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 Cargo.lock text eol=lf merge=binary
+flake.lock text eol=lf merge=binary
