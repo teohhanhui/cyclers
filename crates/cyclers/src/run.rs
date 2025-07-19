@@ -435,15 +435,11 @@ impl_sinks!(
     (11, Sink12)
 );
 
-pub fn setup<M, Drv, Src, Snk, SnkProxy>(
-    main: M,
-    drivers: Drv,
-) -> (/* Src, Snk, */ impl AsyncFnOnce(),)
+pub fn setup<M, Drv, Snk>(main: M, drivers: Drv) -> (/* Drv::Sources, Snk, */ impl AsyncFnOnce(),)
 where
-    M: Main<Src, Snk>,
-    Drv: Drivers<SnkProxy, Sources = Src>,
-    Src: Sources,
-    Snk: Sinks<SinkReceivers = SnkProxy>,
+    M: Main<Drv::Sources, Snk>,
+    Drv: Drivers<Snk::SinkReceivers>,
+    Snk: Sinks,
 {
     let (sources, run) = setup_reusable(drivers);
     let sinks = main.call(sources);
@@ -452,11 +448,10 @@ where
     (/* sources, sinks, */ run,)
 }
 
-pub fn setup_reusable<Drv, Src, Snk, SnkProxy>(drivers: Drv) -> (Src, impl AsyncFnOnce(Snk))
+pub fn setup_reusable<Drv, Snk>(drivers: Drv) -> (Drv::Sources, impl AsyncFnOnce(Snk))
 where
-    Drv: Drivers<SnkProxy, Sources = Src>,
-    Src: Sources,
-    Snk: Sinks<SinkReceivers = SnkProxy>,
+    Drv: Drivers<Snk::SinkReceivers>,
+    Snk: Sinks,
 {
     let (sink_senders, sink_proxies) = Snk::make_sink_proxies();
     let (sources, drivers_fut) = drivers.call(sink_proxies);
@@ -468,12 +463,11 @@ where
     })
 }
 
-pub async fn run<M, Drv, Src, Snk, SnkProxy>(main: M, drivers: Drv)
+pub async fn run<M, Drv, Snk>(main: M, drivers: Drv)
 where
-    M: Main<Src, Snk>,
-    Drv: Drivers<SnkProxy, Sources = Src>,
-    Src: Sources,
-    Snk: Sinks<SinkReceivers = SnkProxy>,
+    M: Main<Drv::Sources, Snk>,
+    Drv: Drivers<Snk::SinkReceivers>,
+    Snk: Sinks,
 {
     let (/* _sources, _sinks, */ run,) = setup(main, drivers);
 
