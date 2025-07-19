@@ -1,7 +1,7 @@
-use futures_concurrency::future::Join as _;
+use futures_concurrency::future::{Join as _, TryJoin as _};
 use futures_concurrency::stream::Merge as _;
 use futures_core::Stream;
-use futures_lite::StreamExt as _;
+use futures_lite::{StreamExt as _, pin};
 use paste::paste;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -10,6 +10,8 @@ use crate::driver::{Driver, Source};
 
 const SINK_PROXY_BUFFER_LEN: usize = 1;
 
+type BoxedError = Box<dyn std::error::Error + Send + Sync>;
+
 pub trait Main<Sources, Sinks> {
     fn call(self, sources: Sources) -> Sinks;
 }
@@ -17,7 +19,7 @@ pub trait Main<Sources, Sinks> {
 pub trait Drivers<Sinks> {
     type Sources: Sources;
 
-    fn call(self, sinks: Sinks) -> (Self::Sources, impl Future<Output = ()>);
+    fn call(self, sinks: Sinks) -> (Self::Sources, impl Future<Output = Result<(), BoxedError>>);
 }
 
 pub trait Sources {}
@@ -28,7 +30,10 @@ pub trait Sinks {
 
     fn make_sink_proxies() -> (Self::SinkSenders, Self::SinkReceivers);
 
-    fn replicate_many(self, sink_senders: Self::SinkSenders) -> impl Future<Output = ()>;
+    fn replicate_many(
+        self,
+        sink_senders: Self::SinkSenders,
+    ) -> impl Future<Output = Result<(), BoxedError>>;
 }
 
 macro_rules! impl_main {
@@ -160,7 +165,7 @@ macro_rules! impl_drivers {
             fn call(
                 self,
                 sinks: ($($sink,)+),
-            ) -> (Self::Sources, impl Future<Output = ()>) {
+            ) -> (Self::Sources, impl Future<Output = Result<(), BoxedError>>) {
                 paste! {
                     $(
                         let ([<source $idx>], [<fut $idx>]) = self.$idx.call(sinks.$idx);
@@ -168,6 +173,7 @@ macro_rules! impl_drivers {
 
                     (($([<source $idx>],)+), async move {
                         ($([<fut $idx>],)+).join().await;
+                        Ok(())
                     })
                 }
             }
@@ -301,15 +307,17 @@ impl_sources!(
 
 macro_rules! impl_sinks {
     (
-        $(($idx:tt, $sink:ident)),+
+        $(($idx:tt, $sink:ident, $t:ident, $e:ident)),+
     ) => {
-        impl<$($sink,)+> Sinks for ($($sink,)+)
+        impl<$($sink,)+ $($t,)+ $($e,)+> Sinks for ($($sink,)+)
         where
-            $($sink: Stream + Send,)+
+            $($sink: Stream<Item = Result<$t, $e>> + Send,)+
             $($sink::Item: Send,)+
+            $($t: Send,)+
+            $($e: Into<BoxedError>,)+
         {
-            type SinkReceivers = ($(ReceiverStream<$sink::Item>,)+);
-            type SinkSenders = ($(mpsc::Sender<$sink::Item>,)+);
+            type SinkReceivers = ($(ReceiverStream<$t>,)+);
+            type SinkSenders = ($(mpsc::Sender<$t>,)+);
 
             fn make_sink_proxies() -> (Self::SinkSenders, Self::SinkReceivers) {
                 paste! {
@@ -334,108 +342,131 @@ macro_rules! impl_sinks {
             fn replicate_many(
                 self,
                 sink_senders: Self::SinkSenders,
-            ) -> impl Future<Output = ()> + Send {
+            ) -> impl Future<Output = Result<(), BoxedError>> + Send {
                 async move {
-                    ($(self.$idx.then(|x| {
+                    let s = ($(self.$idx.then(|x| {
                         let tx = sink_senders.$idx.clone();
                         async move {
+                            let x = x.map_err(Into::into)?;
                             let permit = tx.reserve().await.unwrap();
                             permit.send(x);
+                            Ok::<_, BoxedError>(())
                         }
                     }),)+)
-                        .merge()
-                        .last()
-                        .await;
+                        .merge();
+                    pin!(s);
+
+                    while let Some(x) = s.next().await {
+                        x?;
+                    }
+                    Ok(())
                 }
             }
         }
     };
 }
 
-impl_sinks!((0, Sink1));
-impl_sinks!((0, Sink1), (1, Sink2));
-impl_sinks!((0, Sink1), (1, Sink2), (2, Sink3));
-impl_sinks!((0, Sink1), (1, Sink2), (2, Sink3), (3, Sink4));
-impl_sinks!((0, Sink1), (1, Sink2), (2, Sink3), (3, Sink4), (4, Sink5));
+impl_sinks!((0, Sink1, T1, E1));
+impl_sinks!((0, Sink1, T1, E1), (1, Sink2, T2, E2));
+impl_sinks!((0, Sink1, T1, E1), (1, Sink2, T2, E2), (2, Sink3, T3, E3));
 impl_sinks!(
-    (0, Sink1),
-    (1, Sink2),
-    (2, Sink3),
-    (3, Sink4),
-    (4, Sink5),
-    (5, Sink6)
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4)
 );
 impl_sinks!(
-    (0, Sink1),
-    (1, Sink2),
-    (2, Sink3),
-    (3, Sink4),
-    (4, Sink5),
-    (5, Sink6),
-    (6, Sink7)
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4),
+    (4, Sink5, T5, E5)
 );
 impl_sinks!(
-    (0, Sink1),
-    (1, Sink2),
-    (2, Sink3),
-    (3, Sink4),
-    (4, Sink5),
-    (5, Sink6),
-    (6, Sink7),
-    (7, Sink8)
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4),
+    (4, Sink5, T5, E5),
+    (5, Sink6, T6, E6)
 );
 impl_sinks!(
-    (0, Sink1),
-    (1, Sink2),
-    (2, Sink3),
-    (3, Sink4),
-    (4, Sink5),
-    (5, Sink6),
-    (6, Sink7),
-    (7, Sink8),
-    (8, Sink9)
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4),
+    (4, Sink5, T5, E5),
+    (5, Sink6, T6, E6),
+    (6, Sink7, T7, E7)
 );
 impl_sinks!(
-    (0, Sink1),
-    (1, Sink2),
-    (2, Sink3),
-    (3, Sink4),
-    (4, Sink5),
-    (5, Sink6),
-    (6, Sink7),
-    (7, Sink8),
-    (8, Sink9),
-    (9, Sink10)
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4),
+    (4, Sink5, T5, E5),
+    (5, Sink6, T6, E6),
+    (6, Sink7, T7, E7),
+    (7, Sink8, T8, E8)
 );
 impl_sinks!(
-    (0, Sink1),
-    (1, Sink2),
-    (2, Sink3),
-    (3, Sink4),
-    (4, Sink5),
-    (5, Sink6),
-    (6, Sink7),
-    (7, Sink8),
-    (8, Sink9),
-    (9, Sink10),
-    (10, Sink11)
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4),
+    (4, Sink5, T5, E5),
+    (5, Sink6, T6, E6),
+    (6, Sink7, T7, E7),
+    (7, Sink8, T8, E8),
+    (8, Sink9, T9, E9)
 );
 impl_sinks!(
-    (0, Sink1),
-    (1, Sink2),
-    (2, Sink3),
-    (3, Sink4),
-    (4, Sink5),
-    (5, Sink6),
-    (6, Sink7),
-    (7, Sink8),
-    (8, Sink9),
-    (9, Sink10),
-    (10, Sink11),
-    (11, Sink12)
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4),
+    (4, Sink5, T5, E5),
+    (5, Sink6, T6, E6),
+    (6, Sink7, T7, E7),
+    (7, Sink8, T8, E8),
+    (8, Sink9, T9, E9),
+    (9, Sink10, T10, E10)
+);
+impl_sinks!(
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4),
+    (4, Sink5, T5, E5),
+    (5, Sink6, T6, E6),
+    (6, Sink7, T7, E7),
+    (7, Sink8, T8, E8),
+    (8, Sink9, T9, E9),
+    (9, Sink10, T10, E10),
+    (10, Sink11, T11, E11)
+);
+impl_sinks!(
+    (0, Sink1, T1, E1),
+    (1, Sink2, T2, E2),
+    (2, Sink3, T3, E3),
+    (3, Sink4, T4, E4),
+    (4, Sink5, T5, E5),
+    (5, Sink6, T6, E6),
+    (6, Sink7, T7, E7),
+    (7, Sink8, T8, E8),
+    (8, Sink9, T9, E9),
+    (9, Sink10, T10, E10),
+    (10, Sink11, T11, E11),
+    (11, Sink12, T12, E12)
 );
 
-pub fn setup<M, Drv, Snk>(main: M, drivers: Drv) -> (/* Drv::Sources, Snk, */ impl AsyncFnOnce(),)
+pub fn setup<M, Drv, Snk>(
+    main: M,
+    drivers: Drv,
+) -> (
+    // Drv::Sources, Snk,
+    impl AsyncFnOnce() -> Result<(), BoxedError>,
+)
 where
     M: Main<Drv::Sources, Snk>,
     Drv: Drivers<Snk::SinkReceivers>,
@@ -448,7 +479,12 @@ where
     (/* sources, sinks, */ run,)
 }
 
-pub fn setup_reusable<Drv, Snk>(drivers: Drv) -> (Drv::Sources, impl AsyncFnOnce(Snk))
+pub fn setup_reusable<Drv, Snk>(
+    drivers: Drv,
+) -> (
+    Drv::Sources,
+    impl AsyncFnOnce(Snk) -> Result<(), BoxedError>,
+)
 where
     Drv: Drivers<Snk::SinkReceivers>,
     Snk: Sinks,
@@ -458,12 +494,13 @@ where
 
     (sources, async |sinks: Snk| {
         (sinks.replicate_many(sink_senders), drivers_fut)
-            .join()
-            .await;
+            .try_join()
+            .await?;
+        Ok(())
     })
 }
 
-pub async fn run<M, Drv, Snk>(main: M, drivers: Drv)
+pub async fn run<M, Drv, Snk>(main: M, drivers: Drv) -> Result<(), BoxedError>
 where
     M: Main<Drv::Sources, Snk>,
     Drv: Drivers<Snk::SinkReceivers>,
@@ -471,5 +508,6 @@ where
 {
     let (/* _sources, _sinks, */ run,) = setup(main, drivers);
 
-    run().await
+    run().await?;
+    Ok(())
 }
