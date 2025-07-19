@@ -508,6 +508,5 @@ where
 {
     let (/* _sources, _sinks, */ run,) = setup(main, drivers);
 
-    run().await?;
-    Ok(())
+    run().await
 }

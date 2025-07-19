@@ -25,7 +25,5 @@ async fn main() -> Result<()> {
         (ConsoleDriver,),
     )
     .await
-    .map_err(anyhow::Error::from_boxed)?;
-
-    Ok(())
+    .map_err(anyhow::Error::from_boxed)
 }
