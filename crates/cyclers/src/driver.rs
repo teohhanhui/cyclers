@@ -2,6 +2,8 @@ use futures_core::Stream;
 
 #[cfg(feature = "console")]
 pub mod console;
+#[cfg(feature = "webrtc")]
+pub mod webrtc;
 
 pub trait Driver<Sink>
 where

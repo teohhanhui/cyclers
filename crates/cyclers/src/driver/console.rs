@@ -5,7 +5,7 @@ use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, RxExt as _};
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 
-use crate::driver::{Driver, Source};
+use super::{Driver, Source};
 
 pub struct ConsoleDriver;
 
@@ -33,11 +33,11 @@ where
         let sink = sink.share();
         let print = sink
             .clone()
-            .filter(|event| matches!(**event, ConsoleCommand::Print(_)));
+            .filter(|command| matches!(**command, ConsoleCommand::Print(_)));
 
         (ConsoleSource { sink }, async move {
             print
-                .for_each(|event| match &*event {
+                .for_each(|command| match &*command {
                     ConsoleCommand::Print(s) => println!("{s}"),
                     _ => unreachable!(),
                 })
@@ -56,9 +56,9 @@ where
         let read = self
             .sink
             .clone()
-            .filter(|event| **event == ConsoleCommand::Read);
+            .filter(|command| **command == ConsoleCommand::Read);
         let lines = FramedRead::new(tokio::io::stdin(), LinesCodec::new());
 
-        (read, lines).zip().map(|(_event, line)| line)
+        (read, lines).zip().map(|(_command, line)| line)
     }
 }

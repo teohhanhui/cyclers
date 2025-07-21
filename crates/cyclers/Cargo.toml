@@ -12,10 +12,12 @@ keywords = { workspace = true }
 categories = { workspace = true }
 
 [dependencies]
+futures-channel = { workspace = true, features = ["std"], optional = true }
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-core = { workspace = true, features = [] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
+matchbox_socket = { workspace = true, features = [], optional = true }
 paste = { workspace = true, features = [] }
 tokio = { workspace = true, features = ["sync"] }
 tokio-stream = { workspace = true, features = [] }
@@ -26,8 +28,9 @@ anyhow = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [features]
-default = ["console"]
+default = ["console", "webrtc"]
 console = ["tokio/io-std", "tokio-util/codec"]
+webrtc = ["dep:futures-channel", "dep:matchbox_socket"]
 
 [lints]
 workspace = true
@@ -35,3 +38,7 @@ workspace = true
 [[example]]
 name = "console-echo"
 required-features = ["console"]
+
+[[example]]
+name = "webrtc-chat"
+required-features = ["console", "webrtc"]
