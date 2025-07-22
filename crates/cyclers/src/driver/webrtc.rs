@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use futures_concurrency::future::Join as _;
+use futures_concurrency::stream::Zip as _;
 use futures_core::Stream;
 use futures_lite::stream::Cycle;
 use futures_lite::{StreamExt as _, future, stream};
@@ -67,8 +68,7 @@ where
         let (socket_tx, socket_rx) = oneshot::channel();
         let (channel_sender_tx, channel_sender_rx) = oneshot::channel();
         let (channel_receiver_tx, channel_receiver_rx) = oneshot::channel();
-        // Use `.share_replay().cycle()` to cache the socket sent through the oneshot
-        // channel.
+        // Use `.share_replay().cycle()` to cache the socket from the oneshot channel.
         let socket = stream::once_future(socket_rx)
             .map(|socket| {
                 let socket = socket.expect("`socket_tx` dropped without sending");
@@ -77,8 +77,8 @@ where
             .boxed()
             .share_replay()
             .cycle();
-        // Use `.share_replay().cycle()` to cache the channel receiver sent through the
-        // oneshot channel.
+        // Use `.share_replay().cycle()` to cache the channel receiver from the oneshot
+        // channel.
         let channel_receiver = stream::once_future(channel_receiver_rx)
             .map(|channel_receiver| {
                 let channel_receiver =
@@ -133,27 +133,34 @@ where
             },
             async move {
                 (
-                    // (Ab)use `CombineLatest2` to cache the channel sender received from the
-                    // oneshot channel.
-                    CombineLatest2::new(
-                        stream::once_future(channel_sender_rx).map(|socket| {
-                            socket.expect("`channel_sender_tx` dropped without sending")
-                        }),
+                    (
+                        // (Ab)use `CombineLatest2` to cache the channel sender from the oneshot
+                        // channel.
+                        CombineLatest2::new(
+                            stream::once_future(channel_sender_rx).map(|socket| {
+                                socket.expect("`channel_sender_tx` dropped without sending")
+                            }),
+                            stream::repeat(()),
+                        )
+                        .map(|(channel_sender, _)| channel_sender),
                         send,
                     )
-                    .then(|(channel_sender, command)| match &*command {
-                        WebRtcCommand::Send(packet, peer_id) => {
-                            let packet = packet.clone();
-                            let peer_id = *peer_id;
-                            async move {
-                                if let Err(err) = channel_sender.unbounded_send((peer_id, packet)) {
-                                    todo!("unhandled error: {err}");
+                        .zip()
+                        .then(|(channel_sender, command)| match &*command {
+                            WebRtcCommand::Send(packet, peer_id) => {
+                                let packet = packet.clone();
+                                let peer_id = *peer_id;
+                                async move {
+                                    if let Err(err) =
+                                        channel_sender.unbounded_send((peer_id, packet))
+                                    {
+                                        todo!("unhandled error: {err}");
+                                    }
                                 }
-                            }
-                        },
-                        _ => unreachable!(),
-                    })
-                    .last(),
+                            },
+                            _ => unreachable!(),
+                        })
+                        .last(),
                     disconnect
                         .then(|command| match &*command {
                             WebRtcCommand::Disconnect => {

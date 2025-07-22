@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
             // Filter down to the actual messages by removing slash (`/`) commands.
             let message = input.clone().filter_map(|input| match &*input {
                 Ok(input) => {
-                    if input == "/quit" {
+                    if input == "/quit" || input.is_empty() {
                         None
                     } else {
                         Some(input.clone())
@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
                 Err(_) => None,
             });
             // Translate the slash (`/`) commands into driver commands.
-            let slash_command = (input.clone().filter_map(|input| match &*input {
+            let slash_command = input.clone().filter_map(|input| match &*input {
                 Ok(input) => {
                     if input == "/quit" {
                         Some(WebRtcCommand::Disconnect)
@@ -49,14 +49,13 @@ async fn main() -> Result<()> {
                     }
                 },
                 Err(_) => None,
-            }),)
-                .merge();
+            });
             // Broadcast each message to all connected peers.
             let send = (
                 // Cache the latest list of connected peers.
                 CombineLatest2::new(connected_peers, stream::repeat(()))
                     .map(|(connected_peers, _)| connected_peers),
-                message.clone(),
+                message,
             )
                 .zip()
                 .flat_map(|(connected_peers, message)| {
@@ -80,11 +79,11 @@ async fn main() -> Result<()> {
                     Ok(ConsoleCommand::Print(">> ".to_owned())),
                 ])
             });
-            // Prioritize sending slash commands if there are any, otherwise send messages
-            // if there are any.
+            // Send out any slash commands or messages.
+            //
             // But before anything else, connect to the `matchbox_server`.
-            let webrtc_sink = slash_command
-                .or(send)
+            let webrtc_sink = (slash_command, send)
+                .merge()
                 .map(Ok::<_, Arc<dyn Error + Send + Sync + 'static>>)
                 .start_with([Ok(WebRtcCommand::Connect {
                     room_url: format!(
