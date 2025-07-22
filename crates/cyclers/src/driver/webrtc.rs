@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use futures_concurrency::future::Join as _;
+use futures_concurrency::future::TryJoin as _;
 use futures_concurrency::stream::Zip as _;
 use futures_core::Stream;
 use futures_lite::stream::Cycle;
-use futures_lite::{StreamExt as _, future, stream};
+use futures_lite::{StreamExt as _, future, pin, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{CombineLatest2, PublishSubject, ReplaySubject, RxExt as _};
 use matchbox_socket::WebRtcSocket;
@@ -12,10 +12,12 @@ pub use matchbox_socket::{Packet, PeerId, PeerState};
 use tokio::sync::{Mutex, oneshot};
 
 use super::{Driver, Source};
+use crate::BoxError;
 
 /// Type alias for an infinite [`Stream`] that yields the same [`WebRtcSocket`]
 /// item repeatedly.
 type Socket = Cycle<Shared<stream::Boxed<Mutex<WebRtcSocket>>, ReplaySubject<Mutex<WebRtcSocket>>>>;
+
 /// Type alias for an infinite [`Stream`] that yields the same channel receiver
 /// item repeatedly.
 type ChannelReceiver = Cycle<
@@ -51,7 +53,7 @@ where
     type Input = WebRtcCommand;
     type Source = WebRtcSource<Sink>;
 
-    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = ()>) {
+    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>) {
         let sink = sink.share();
         let mut connect = sink
             .clone()
@@ -133,36 +135,39 @@ where
             },
             async move {
                 (
-                    (
-                        // (Ab)use `CombineLatest2` to cache the channel sender from the oneshot
-                        // channel.
-                        CombineLatest2::new(
-                            stream::once_future(channel_sender_rx).map(|socket| {
-                                socket.expect("`channel_sender_tx` dropped without sending")
-                            }),
-                            stream::repeat(()),
-                        )
-                        .map(|(channel_sender, _)| channel_sender),
-                        send,
-                    )
-                        .zip()
-                        .then(|(channel_sender, command)| match &*command {
-                            WebRtcCommand::Send(packet, peer_id) => {
-                                let packet = packet.clone();
-                                let peer_id = *peer_id;
-                                async move {
-                                    if let Err(err) =
-                                        channel_sender.unbounded_send((peer_id, packet))
-                                    {
-                                        todo!("unhandled error: {err}");
-                                    }
-                                }
-                            },
-                            _ => unreachable!(),
-                        })
-                        .last(),
-                    disconnect
-                        .then(|command| match &*command {
+                    async move {
+                        let s =
+                            (
+                                // (Ab)use `CombineLatest2` to cache the channel sender from the
+                                // oneshot channel.
+                                CombineLatest2::new(
+                                    stream::once_future(channel_sender_rx).map(|socket| {
+                                        socket.expect("`channel_sender_tx` dropped without sending")
+                                    }),
+                                    stream::repeat(()),
+                                )
+                                .map(|(channel_sender, _)| channel_sender),
+                                send,
+                            )
+                                .zip()
+                                .then(|(channel_sender, command)| match &*command {
+                                    WebRtcCommand::Send(packet, peer_id) => {
+                                        let packet = packet.clone();
+                                        let peer_id = *peer_id;
+                                        async move {
+                                            channel_sender.unbounded_send((peer_id, packet))?;
+                                            Ok::<_, BoxError>(())
+                                        }
+                                    },
+                                    _ => unreachable!(),
+                                });
+                        pin!(s);
+
+                        while s.try_next().await?.is_some() {}
+                        Ok(())
+                    },
+                    async move {
+                        let s = disconnect.then(|command| match &*command {
                             WebRtcCommand::Disconnect => {
                                 let mut socket = socket.clone();
                                 async move {
@@ -172,17 +177,21 @@ where
                                 }
                             },
                             _ => unreachable!(),
-                        })
-                        .last(),
+                        });
+                        pin!(s);
+
+                        while s.next().await.is_some() {}
+                        Ok(())
+                    },
                     async move {
                         // Poll the message loop future from `matchbox_socket`.
-                        if let Err(err) = message_loop_fut.await {
-                            todo!("unhandled error: {err}");
-                        }
+                        message_loop_fut.await?;
+                        Ok::<_, BoxError>(())
                     },
                 )
-                    .join()
-                    .await;
+                    .try_join()
+                    .await
+                    .map(|_| ())
             },
         )
     }

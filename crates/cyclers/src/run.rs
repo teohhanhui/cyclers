@@ -1,4 +1,6 @@
-use futures_concurrency::future::{Join as _, TryJoin as _};
+use std::sync::Arc;
+
+use futures_concurrency::future::TryJoin as _;
 use futures_concurrency::stream::Merge as _;
 use futures_core::Stream;
 use futures_lite::{StreamExt as _, pin};
@@ -10,7 +12,11 @@ use crate::driver::{Driver, Source};
 
 const SINK_PROXY_BUFFER_LEN: usize = 1;
 
-type BoxedError = Box<dyn std::error::Error + Send + Sync>;
+/// Type alias for a type-erased error type.
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// Type alias for a type-erased error type that can be cloned.
+pub type ArcError = Arc<dyn std::error::Error + Send + Sync>;
 
 pub trait Main<Sources, Sinks> {
     fn call(self, sources: Sources) -> Sinks;
@@ -19,7 +25,7 @@ pub trait Main<Sources, Sinks> {
 pub trait Drivers<Sinks> {
     type Sources: Sources;
 
-    fn call(self, sinks: Sinks) -> (Self::Sources, impl Future<Output = Result<(), BoxedError>>);
+    fn call(self, sinks: Sinks) -> (Self::Sources, impl Future<Output = Result<(), BoxError>>);
 }
 
 pub trait Sources {}
@@ -33,7 +39,7 @@ pub trait Sinks {
     fn replicate_many(
         self,
         sink_senders: Self::SinkSenders,
-    ) -> impl Future<Output = Result<(), BoxedError>>;
+    ) -> impl Future<Output = Result<(), BoxError>>;
 }
 
 macro_rules! impl_main {
@@ -165,14 +171,14 @@ macro_rules! impl_drivers {
             fn call(
                 self,
                 sinks: ($($sink,)+),
-            ) -> (Self::Sources, impl Future<Output = Result<(), BoxedError>>) {
+            ) -> (Self::Sources, impl Future<Output = Result<(), BoxError>>) {
                 paste! {
                     $(
                         let ([<source $idx>], [<fut $idx>]) = self.$idx.call(sinks.$idx);
                     )+
 
                     (($([<source $idx>],)+), async move {
-                        ($([<fut $idx>],)+).join().await;
+                        ($([<fut $idx>],)+).try_join().await?;
                         Ok(())
                     })
                 }
@@ -314,7 +320,7 @@ macro_rules! impl_sinks {
             $($sink: Stream<Item = Result<$t, $e>> + Send,)+
             $($sink::Item: Send,)+
             $($t: Send,)+
-            $($e: Into<BoxedError>,)+
+            $($e: Into<BoxError>,)+
         {
             type SinkReceivers = ($(ReceiverStream<$t>,)+);
             type SinkSenders = ($(mpsc::Sender<$t>,)+);
@@ -342,7 +348,7 @@ macro_rules! impl_sinks {
             fn replicate_many(
                 self,
                 sink_senders: Self::SinkSenders,
-            ) -> impl Future<Output = Result<(), BoxedError>> + Send {
+            ) -> impl Future<Output = Result<(), BoxError>> + Send {
                 async move {
                     let s = ($(self.$idx.then(|x| {
                         let tx = sink_senders.$idx.clone();
@@ -350,15 +356,13 @@ macro_rules! impl_sinks {
                             let x = x.map_err(Into::into)?;
                             let permit = tx.reserve().await.unwrap();
                             permit.send(x);
-                            Ok::<_, BoxedError>(())
+                            Ok::<_, BoxError>(())
                         }
                     }),)+)
                         .merge();
                     pin!(s);
 
-                    while let Some(x) = s.next().await {
-                        x?;
-                    }
+                    while s.try_next().await?.is_some() {}
                     Ok(())
                 }
             }
@@ -465,7 +469,7 @@ pub fn setup<M, Drv, Snk>(
     drivers: Drv,
 ) -> (
     // Drv::Sources, Snk,
-    impl AsyncFnOnce() -> Result<(), BoxedError>,
+    impl AsyncFnOnce() -> Result<(), BoxError>,
 )
 where
     M: Main<Drv::Sources, Snk>,
@@ -481,10 +485,7 @@ where
 
 pub fn setup_reusable<Drv, Snk>(
     drivers: Drv,
-) -> (
-    Drv::Sources,
-    impl AsyncFnOnce(Snk) -> Result<(), BoxedError>,
-)
+) -> (Drv::Sources, impl AsyncFnOnce(Snk) -> Result<(), BoxError>)
 where
     Drv: Drivers<Snk::SinkReceivers>,
     Snk: Sinks,
@@ -500,7 +501,7 @@ where
     })
 }
 
-pub async fn run<M, Drv, Snk>(main: M, drivers: Drv) -> Result<(), BoxedError>
+pub async fn run<M, Drv, Snk>(main: M, drivers: Drv) -> Result<(), BoxError>
 where
     M: Main<Drv::Sources, Snk>,
     Drv: Drivers<Snk::SinkReceivers>,

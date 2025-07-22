@@ -6,6 +6,7 @@ use futures_rx::{PublishSubject, RxExt as _};
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 
 use super::{Driver, Source};
+use crate::BoxError;
 
 pub struct ConsoleDriver;
 
@@ -29,7 +30,7 @@ where
     type Input = ConsoleCommand;
     type Source = ConsoleSource<Sink>;
 
-    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = ()>) {
+    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>) {
         let sink = sink.share();
         let print = sink
             .clone()
@@ -42,6 +43,7 @@ where
                     _ => unreachable!(),
                 })
                 .await;
+            Ok(())
         })
     }
 }

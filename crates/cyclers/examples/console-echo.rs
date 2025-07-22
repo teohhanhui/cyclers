@@ -13,6 +13,7 @@ async fn main() -> Result<()> {
                 let input = input.context("failed to read line")?;
                 Ok::<_, anyhow::Error>(ConsoleCommand::Print(input))
             });
+
             // Interleave reads and echoes. Send a read command, and then wait to
             // receive+print the line being read.
             let console_sink = (echo, stream::repeat_with(|| Ok(ConsoleCommand::Read)))

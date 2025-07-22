@@ -1,5 +1,7 @@
 use futures_core::Stream;
 
+use crate::BoxError;
+
 #[cfg(feature = "console")]
 pub mod console;
 #[cfg(feature = "webrtc")]
@@ -12,7 +14,7 @@ where
     type Input;
     type Source: Source;
 
-    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = ()>);
+    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>);
 }
 
 pub trait Source {}
