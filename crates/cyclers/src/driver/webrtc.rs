@@ -4,7 +4,7 @@ use futures_concurrency::future::{Race as _, TryJoin as _};
 use futures_concurrency::stream::Zip as _;
 use futures_core::Stream;
 use futures_lite::stream::Cycle;
-use futures_lite::{StreamExt as _, pin, stream};
+use futures_lite::{StreamExt as _, future, pin, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, ReplaySubject, RxExt as _};
 use matchbox_socket::WebRtcSocket;
@@ -171,6 +171,8 @@ where
                             pin!(s);
 
                             while s.try_next().await?.is_some() {}
+                            // HACK: Prevent the driver future from being dropped.
+                            future::pending::<()>().await;
                             Ok(())
                         }
                     },
@@ -197,11 +199,15 @@ where
                         pin!(s);
 
                         s.next().await;
+                        // HACK: Prevent the driver future from being dropped.
+                        future::pending::<()>().await;
                         Ok(())
                     },
                     async move {
                         // Poll the message loop future from `matchbox_socket`.
                         message_loop_fut.await?;
+                        // HACK: Prevent the driver future from being dropped.
+                        future::pending::<()>().await;
                         Ok::<_, BoxError>(())
                     },
                 )

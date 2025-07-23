@@ -5,7 +5,7 @@ use cyclers::ArcError;
 use cyclers::driver::console::{ConsoleCommand, ConsoleDriver, ConsoleSource};
 use cyclers::driver::webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
 use futures_concurrency::stream::{Chain as _, Merge as _, Zip as _};
-use futures_lite::{FutureExt as _, StreamExt as _, future, stream};
+use futures_lite::{StreamExt as _, stream};
 use futures_rx::{CombineLatest2, RxExt as _};
 
 #[tokio::main]
@@ -70,23 +70,11 @@ async fn main() -> Result<()> {
             });
 
             // Stop reading input after we have sent the disconnect command.
-            //
-            // Cache the stopping condition as it only happens once.
-            let read_until_disconnect = stream::unfold(
-                (disconnect.cycle().boxed(),),
-                |(mut disconnect,)| async move {
-                    {
-                        let disconnect = &mut disconnect;
-                        async move {
-                            disconnect.next().await;
-                            None
-                        }
-                    }
-                    .or(future::ready(Some(ConsoleCommand::Read)))
-                    .await
-                    .map(|read| (read, (disconnect,)))
-                },
-            );
+            let read_until_disconnect =
+                stream::stop_after_future(stream::repeat(ConsoleCommand::Read), async move {
+                    let mut disconnect = disconnect.boxed();
+                    disconnect.next().await;
+                });
 
             // Broadcast each message to all connected peers.
             let connected_peers = webrtc_source.connected_peers();
