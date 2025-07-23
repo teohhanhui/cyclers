@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 
-use futures_concurrency::future::TryJoin as _;
+use futures_concurrency::future::{Race as _, TryJoin as _};
 use futures_concurrency::stream::Zip as _;
 use futures_core::Stream;
 use futures_lite::stream::Cycle;
-use futures_lite::{StreamExt as _, future, pin, stream};
+use futures_lite::{StreamExt as _, pin, stream};
 use futures_rx::stream_ext::share::Shared;
-use futures_rx::{CombineLatest2, PublishSubject, ReplaySubject, RxExt as _};
+use futures_rx::{PublishSubject, ReplaySubject, RxExt as _};
 use matchbox_socket::WebRtcSocket;
 pub use matchbox_socket::{Packet, PeerId, PeerState};
 use tokio::sync::{Mutex, oneshot};
+use tokio_util::sync::CancellationToken;
 
 use super::{Driver, Source};
 use crate::BoxError;
@@ -37,6 +38,7 @@ where
     _sink: Shared<Sink, PublishSubject<Sink::Item>>,
     socket: Socket,
     channel_receiver: ChannelReceiver,
+    close_token: CancellationToken,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -55,7 +57,7 @@ where
 
     fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>) {
         let sink = sink.share();
-        let mut connect = sink
+        let connect = sink
             .clone()
             .filter(|command| matches!(**command, WebRtcCommand::Connect { .. }));
         let disconnect = sink
@@ -79,6 +81,14 @@ where
             .boxed()
             .share_replay()
             .cycle();
+        // Use `.share_replay().cycle()` to cache the channel sender from the oneshot
+        // channel.
+        let channel_sender = stream::once_future(channel_sender_rx)
+            .map(|channel_sender| {
+                channel_sender.expect("`channel_sender_tx` dropped without sending")
+            })
+            .share_replay()
+            .cycle();
         // Use `.share_replay().cycle()` to cache the channel receiver from the oneshot
         // channel.
         let channel_receiver = stream::once_future(channel_receiver_rx)
@@ -91,96 +101,102 @@ where
             .share_replay()
             .cycle();
         let message_loop_fut = async move {
-            if let Some(command) = connect.next().await {
-                match &*command {
-                    WebRtcCommand::Connect { room_url } => {
-                        let (mut socket, message_loop_fut) = WebRtcSocket::new_reliable(room_url);
-                        // Split up the `matchbox_socket::WebRtcChannel` into sender and receiver.
-                        //
-                        // Note: They are not connected to each other in the first place. The
-                        // "channel" in the name refers to WebRTC data channel, not channels in the
-                        // Rust sense...
-                        //
-                        // We need to be able to poll both at the same time without causing a
-                        // deadlock accessing the socket as a shared resource.
-                        //
-                        // TODO: Handle multiple channels per connection?
-                        let (channel_sender, channel_receiver) =
-                            socket.take_channel(0).unwrap().split();
-                        // Send things back out through oneshot channels so that they can be used
-                        // elsewhere in this driver.
-                        socket_tx.send(socket).expect("`socket_rx` dropped");
-                        channel_sender_tx
-                            .send(channel_sender)
-                            .expect("`channel_sender_rx` dropped");
-                        channel_receiver_tx
-                            .send(channel_receiver)
-                            .expect("`channel_receiver_rx` dropped");
-                        // This message loop future from `matchbox_socket` will need to be polled in
-                        // the driver future.
-                        return message_loop_fut.await;
-                    },
-                    _ => unreachable!(),
-                }
-            }
+            let mut connect = connect;
             // TODO: Handle multiple connections?
-            future::pending().await
+            if let Some(connect) = connect.next().await {
+                let WebRtcCommand::Connect { room_url } = &*connect else {
+                    unreachable!();
+                };
+                let (mut socket, message_loop_fut) = WebRtcSocket::new_reliable(room_url);
+                // Split up the `matchbox_socket::WebRtcChannel` into sender and receiver.
+                //
+                // Note: They are not connected to each other in the first place. The "channel"
+                // in the name refers to WebRTC data channel, not channels in the Rust sense...
+                //
+                // We need to be able to poll both at the same time without causing a deadlock
+                // accessing the socket as a shared resource.
+                //
+                // TODO: Handle multiple channels per connection?
+                let (channel_sender, channel_receiver) = socket.take_channel(0).unwrap().split();
+                // Send things back out through oneshot channels so that they can be used
+                // elsewhere in this driver.
+                socket_tx.send(socket).expect("`socket_rx` dropped");
+                channel_sender_tx
+                    .send(channel_sender)
+                    .expect("`channel_sender_rx` dropped");
+                channel_receiver_tx
+                    .send(channel_receiver)
+                    .expect("`channel_receiver_rx` dropped");
+                // This message loop future from `matchbox_socket` will need to be polled in the
+                // driver future.
+                return message_loop_fut.await;
+            }
+            Ok(())
         };
+        let close_token = CancellationToken::new();
 
         (
             WebRtcSource {
                 _sink: sink,
-                socket: socket.clone(),
-                channel_receiver,
+                socket,
+                channel_receiver: channel_receiver.clone(),
+                close_token: close_token.child_token(),
             },
             async move {
                 (
-                    async move {
-                        let s =
-                            (
-                                // (Ab)use `CombineLatest2` to cache the channel sender from the
-                                // oneshot channel.
-                                CombineLatest2::new(
-                                    stream::once_future(channel_sender_rx).map(|socket| {
-                                        socket.expect("`channel_sender_tx` dropped without sending")
-                                    }),
-                                    stream::repeat(()),
-                                )
-                                .map(|(channel_sender, _)| channel_sender),
-                                send,
-                            )
-                                .zip()
-                                .then(|(channel_sender, command)| match &*command {
-                                    WebRtcCommand::Send(packet, peer_id) => {
-                                        let packet = packet.clone();
-                                        let peer_id = *peer_id;
-                                        async move {
-                                            channel_sender.unbounded_send((peer_id, packet))?;
-                                            Ok::<_, BoxError>(())
-                                        }
-                                    },
-                                    _ => unreachable!(),
-                                });
-                        pin!(s);
+                    {
+                        let channel_sender = channel_sender.clone();
+                        let close_token = close_token.child_token();
+                        async move {
+                            let s = stream::unfold((channel_sender, send).zip(), |mut s| {
+                                let close_token = &close_token;
+                                async move {
+                                    let (channel_sender, send) = (s.next(), async move {
+                                        close_token.cancelled().await;
+                                        None
+                                    })
+                                        .race()
+                                        .await?;
+                                    let WebRtcCommand::Send(packet, peer_id) = &*send else {
+                                        unreachable!();
+                                    };
+                                    Some((
+                                        channel_sender
+                                            .unbounded_send((*peer_id, packet.clone()))
+                                            .map_err(BoxError::from),
+                                        s,
+                                    ))
+                                }
+                            });
+                            pin!(s);
 
-                        while s.try_next().await?.is_some() {}
-                        Ok(())
+                            while s.try_next().await?.is_some() {}
+                            Ok(())
+                        }
                     },
                     async move {
-                        let s = disconnect.then(|command| match &*command {
-                            WebRtcCommand::Disconnect => {
-                                let mut socket = socket.clone();
+                        let s = (channel_sender, channel_receiver, disconnect).zip().then(
+                            |(channel_sender, channel_receiver, disconnect)| {
+                                let WebRtcCommand::Disconnect = &*disconnect else {
+                                    unreachable!();
+                                };
+                                let close_token = &close_token;
                                 async move {
-                                    let socket = &*socket.next().await.unwrap();
-                                    let mut socket = socket.lock().await;
-                                    socket.close();
+                                    // Signal the `WebRtcCommand::Send` handler and the
+                                    // `WebRtcSource::receive` stream to stop.
+                                    close_token.cancel();
+                                    // Close channel sender and receiver. `WebRtcSource::receive`
+                                    // stream should have stopped / should stop soon, so there
+                                    // should be no deadlock on the mutex here.
+                                    channel_sender.close_channel();
+                                    let mut channel_receiver = channel_receiver.lock().await;
+                                    channel_receiver.close();
                                 }
                             },
-                            _ => unreachable!(),
-                        });
+                        );
                         pin!(s);
 
-                        while s.next().await.is_some() {}
+                        s.next().await;
                         Ok(())
                     },
                     async move {
@@ -211,44 +227,43 @@ where
     /// Returns a [`Stream`] that yields peer connected/disconnected state
     /// changes.
     pub fn peer_changes(&self) -> impl Stream<Item = (PeerId, PeerState)> + use<Sink> {
-        stream::unfold((), {
-            let socket = self.socket.clone();
-            move |_| {
-                let mut socket = socket.clone();
-                async move {
-                    let socket = &*socket.next().await.unwrap();
-                    let mut socket = socket.lock().await;
-                    // `WebRtcSocket` itself is a `Stream`, which yields peer changes.
-                    if let Some((peer_id, peer_state)) = socket.next().await {
-                        Some(((peer_id, peer_state), ()))
-                    } else {
-                        None
-                    }
-                }
+        let socket = self.socket.clone();
+
+        stream::unfold((socket,), {
+            move |(mut socket,)| async move {
+                let sock = &*socket.next().await.unwrap();
+                let mut sock = sock.lock().await;
+                // `WebRtcSocket` itself is a `Stream`, which yields peer changes.
+                let (peer_id, peer_state) = sock.next().await?;
+
+                Some(((peer_id, peer_state), (socket,)))
             }
         })
     }
 
     /// Returns a [`Stream`] that yields the latest list of all connected peers.
     pub fn connected_peers(&self) -> impl Stream<Item = Vec<PeerId>> + use<Sink> {
-        let peer_changes = self.peer_changes().share();
+        let peer_changes = self.peer_changes();
+        let peer_changes = Box::pin(peer_changes);
+
         stream::unfold(
-            None,
-            move |mut peers_storage: Option<HashMap<PeerId, PeerState>>| {
-                let mut peer_changes = peer_changes.clone();
-                async move {
-                    if let Some(peer) = peer_changes.next().await {
-                        let (peer_id, peer_state) = &*peer;
-                        if let Some(peers) = &mut peers_storage {
-                            peers.insert(*peer_id, *peer_state);
-                            Some((peers.keys().copied().collect(), peers_storage))
-                        } else {
-                            peers_storage = Some(HashMap::from([(*peer_id, *peer_state)]));
-                            Some((vec![*peer_id], peers_storage))
-                        }
-                    } else {
-                        None
-                    }
+            (None, peer_changes),
+            move |(mut peers_storage, mut peer_changes): (
+                Option<HashMap<PeerId, PeerState>>,
+                _,
+            )| async move {
+                let (peer_id, peer_state) = peer_changes.next().await?;
+                if let Some(peers) = &mut peers_storage {
+                    peers.insert(peer_id, peer_state);
+
+                    Some((
+                        peers.keys().copied().collect(),
+                        (peers_storage, peer_changes),
+                    ))
+                } else {
+                    peers_storage = Some(HashMap::from([(peer_id, peer_state)]));
+
+                    Some((vec![peer_id], (peers_storage, peer_changes)))
                 }
             },
         )
@@ -256,20 +271,26 @@ where
 
     /// Returns a [`Stream`] that yields messages received from other peers.
     pub fn receive(&self) -> impl Stream<Item = (PeerId, Packet)> + use<Sink> {
-        stream::unfold((), {
-            let channel_receiver = self.channel_receiver.clone();
-            move |_| {
-                let mut channel_receiver = channel_receiver.clone();
-                async move {
-                    let channel_receiver = &*channel_receiver.next().await.unwrap();
-                    let mut channel_receiver = channel_receiver.lock().await;
-                    if let Some((peer_id, packet)) = channel_receiver.next().await {
-                        Some(((peer_id, packet), ()))
-                    } else {
+        let channel_receiver = self.channel_receiver.clone();
+        let close_token = self.close_token.clone();
+
+        stream::unfold(
+            (channel_receiver, close_token),
+            move |(mut channel_receiver, close_token)| async move {
+                let channel_rx = &*channel_receiver.next().await.unwrap();
+                let mut channel_rx = channel_rx.lock().await;
+                let (peer_id, packet) = (channel_rx.next(), {
+                    let close_token = &close_token;
+                    async move {
+                        close_token.cancelled().await;
                         None
                     }
-                }
-            }
-        })
+                })
+                    .race()
+                    .await?;
+
+                Some(((peer_id, packet), (channel_receiver, close_token)))
+            },
+        )
     }
 }

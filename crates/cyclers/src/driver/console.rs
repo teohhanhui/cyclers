@@ -38,9 +38,11 @@ where
 
         (ConsoleSource { sink }, async move {
             print
-                .for_each(|command| match &*command {
-                    ConsoleCommand::Print(s) => println!("{s}"),
-                    _ => unreachable!(),
+                .for_each(|print| {
+                    let ConsoleCommand::Print(s) = &*print else {
+                        unreachable!();
+                    };
+                    println!("{s}");
                 })
                 .await;
             Ok(())
@@ -58,9 +60,9 @@ where
         let read = self
             .sink
             .clone()
-            .filter(|command| **command == ConsoleCommand::Read);
+            .filter(|command| matches!(**command, ConsoleCommand::Read));
         let lines = FramedRead::new(tokio::io::stdin(), LinesCodec::new());
 
-        (read, lines).zip().map(|(_command, line)| line)
+        (read, lines).zip().map(|(_read, line)| line)
     }
 }

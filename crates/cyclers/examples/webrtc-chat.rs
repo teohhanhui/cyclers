@@ -4,32 +4,32 @@ use anyhow::{Context as _, Result};
 use cyclers::ArcError;
 use cyclers::driver::console::{ConsoleCommand, ConsoleDriver, ConsoleSource};
 use cyclers::driver::webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
-use futures_concurrency::stream::{Merge as _, Zip as _};
-use futures_lite::{StreamExt as _, stream};
+use futures_concurrency::stream::{Chain as _, Merge as _, Zip as _};
+use futures_lite::{FutureExt as _, StreamExt as _, future, stream};
 use futures_rx::{CombineLatest2, RxExt as _};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     cyclers::run(
         |webrtc_source: WebRtcSource<_>, console_source: ConsoleSource<_>| {
-            let connected_peers = webrtc_source.connected_peers();
+            let connect = stream::once(WebRtcCommand::Connect {
+                room_url: format!(
+                    "ws://{host}:{port}/{room_id}",
+                    host = "127.0.0.1",
+                    port = "3536",
+                    room_id = "cyclers-webrtc-chat"
+                ),
+            });
 
-            // Lines of input read from the console.
+            // Read lines of input from the console.
             let input = console_source
                 .read()
                 .map(|input| {
                     input
-                        .context("failed to read line")
+                        .context("failed to read line from console")
                         .map_err(|err| ArcError::from(err.into_boxed_dyn_error()))
                 })
                 .share();
-
-            // Each time we receive a line read from the console, we send out an echo but we
-            // do not print it back out.
-            let pseudo_echo = input.clone().map(|input| match &*input {
-                Ok(input) => Ok(ConsoleCommand::Print(input.clone())),
-                Err(err) => Err(Arc::clone(err)),
-            });
 
             // Filter down to the actual messages by removing slash (`/`) commands.
             let message = input.clone().filter_map(|input| match &*input {
@@ -44,18 +44,52 @@ async fn main() -> Result<()> {
             });
 
             // Translate the slash (`/`) commands into driver commands.
-            let slash_command = input.clone().filter_map(|input| match &*input {
-                Ok(input) => {
-                    if input == "/quit" {
-                        Some(WebRtcCommand::Disconnect)
-                    } else {
-                        None
-                    }
-                },
-                Err(_) => None,
+            let slash_command = input
+                .clone()
+                .filter_map(|input| match &*input {
+                    Ok(input) => {
+                        if input == "/quit" {
+                            Some(WebRtcCommand::Disconnect)
+                        } else {
+                            None
+                        }
+                    },
+                    Err(_) => None,
+                })
+                .share();
+            let disconnect = slash_command
+                .clone()
+                .filter(|command| matches!(**command, WebRtcCommand::Disconnect));
+            let slash_command = slash_command.map(|command| (*command).clone());
+
+            // Each time we receive a line read from the console, we send out an echo but we
+            // do not print it back out.
+            let pseudo_echo = input.clone().map(|input| match &*input {
+                Ok(_input) => Ok(ConsoleCommand::Print("".to_owned())),
+                Err(err) => Err(Arc::clone(err)),
             });
 
+            // Stop reading input after we have sent the disconnect command.
+            //
+            // Cache the stopping condition as it only happens once.
+            let read_until_disconnect = stream::unfold(
+                (disconnect.cycle().boxed(),),
+                |(mut disconnect,)| async move {
+                    {
+                        let disconnect = &mut disconnect;
+                        async move {
+                            disconnect.next().await;
+                            None
+                        }
+                    }
+                    .or(future::ready(Some(ConsoleCommand::Read)))
+                    .await
+                    .map(|read| (read, (disconnect,)))
+                },
+            );
+
             // Broadcast each message to all connected peers.
+            let connected_peers = webrtc_source.connected_peers();
             let send = (
                 // Cache the latest list of connected peers.
                 CombineLatest2::new(connected_peers, stream::repeat(()))
@@ -84,40 +118,36 @@ async fn main() -> Result<()> {
                 ])
             });
 
-            // Send out any slash commands or messages.
+            // First, connect to the `matchbox_server`.
             //
-            // But before anything else, connect to the `matchbox_server`.
-            let webrtc_sink = (slash_command, send)
-                .merge()
-                .map(Ok::<_, ArcError>)
-                .start_with([Ok(WebRtcCommand::Connect {
-                    room_url: format!(
-                        "ws://{host}:{port}/{room_id}",
-                        host = "127.0.0.1",
-                        port = "3536",
-                        room_id = "cyclers-webrtc-chat"
-                    ),
-                })]);
+            // Then continue to send out any commands or messages.
+            let webrtc_sink = (connect, (slash_command, send).merge())
+                .chain()
+                .map(Ok::<_, ArcError>);
 
             let console_sink = (
                 // Interleave reads and pseudo-echoes. Send a read command, and then wait to
                 // receive+pseudo-print the line being read.
                 (
-                    pseudo_echo,
-                    stream::repeat_with(|| Ok(ConsoleCommand::Read)),
+                    stream::iter([
+                        ConsoleCommand::Print(">> ".to_owned()),
+                        ConsoleCommand::Read,
+                    ])
+                    .map(Ok),
+                    (
+                        pseudo_echo,
+                        read_until_disconnect
+                            .map(|read| {
+                                stream::iter(vec![ConsoleCommand::Print(">> ".to_owned()), read])
+                            })
+                            .or(stream::once(stream::iter(vec![ConsoleCommand::Print(
+                                "Bye!".to_owned(),
+                            )]))),
+                    )
+                        .zip()
+                        .flat_map(|(echo, read)| (stream::once(echo), read.map(Ok)).chain()),
                 )
-                    .zip()
-                    .flat_map(|(echo, read)| {
-                        stream::iter([
-                            echo.map(|_| ConsoleCommand::Print("".to_owned())),
-                            Ok(ConsoleCommand::Print(">> ".to_owned())),
-                            read,
-                        ])
-                    })
-                    .start_with([
-                        Ok(ConsoleCommand::Print(">> ".to_owned())),
-                        Ok(ConsoleCommand::Read),
-                    ]),
+                    .chain(),
                 // Don't worry. Received messages are actually being printed.
                 print_received,
             )

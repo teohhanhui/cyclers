@@ -30,7 +30,7 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 [features]
 default = ["console", "webrtc"]
 console = ["tokio/io-std", "tokio-util/codec"]
-webrtc = ["dep:futures-channel", "dep:matchbox_socket"]
+webrtc = ["dep:futures-channel", "dep:matchbox_socket", "dep:tokio-util"]
 
 [lints]
 workspace = true
