@@ -19,6 +19,7 @@ futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
 matchbox_socket = { workspace = true, features = [], optional = true }
 paste = { workspace = true, features = [] }
+rustix = { workspace = true, features = [], optional = true }
 tokio = { workspace = true, features = ["sync"] }
 tokio-stream = { workspace = true, features = [] }
 tokio-util = { workspace = true, features = [], optional = true }
@@ -28,17 +29,17 @@ anyhow = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [features]
-default = ["console", "webrtc"]
-console = ["tokio/io-std", "tokio-util/codec"]
+default = ["terminal", "webrtc"]
+terminal = ["rustix/fs", "tokio/io-std", "tokio/net", "tokio-util/codec"]
 webrtc = ["dep:futures-channel", "dep:matchbox_socket", "dep:tokio-util"]
 
 [lints]
 workspace = true
 
 [[example]]
-name = "console-echo"
-required-features = ["console"]
+name = "terminal-echo"
+required-features = ["terminal"]
 
 [[example]]
 name = "webrtc-chat"
-required-features = ["console", "webrtc"]
+required-features = ["terminal", "webrtc"]

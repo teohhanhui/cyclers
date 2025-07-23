@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::sync::Arc;
 
 use futures_concurrency::future::TryJoin as _;
@@ -13,10 +14,10 @@ use crate::driver::{Driver, Source};
 const SINK_PROXY_BUFFER_LEN: usize = 1;
 
 /// Type alias for a type-erased error type.
-pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+pub type BoxError = Box<dyn Error + Send + Sync>;
 
 /// Type alias for a type-erased error type that can be cloned.
-pub type ArcError = Arc<dyn std::error::Error + Send + Sync>;
+pub type ArcError = Arc<dyn Error + Send + Sync>;
 
 pub trait Main<Sources, Sinks> {
     fn call(self, sources: Sources) -> Sinks;

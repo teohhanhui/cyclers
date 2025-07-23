@@ -2,8 +2,8 @@ use futures_core::Stream;
 
 use crate::BoxError;
 
-#[cfg(feature = "console")]
-pub mod console;
+#[cfg(feature = "terminal")]
+pub mod terminal;
 #[cfg(feature = "webrtc")]
 pub mod webrtc;
 
