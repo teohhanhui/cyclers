@@ -111,7 +111,7 @@ where
             .filter(|command| matches!(**command, TerminalCommand::ReadLine));
 
         let stdin: io::Result<Box<dyn AsyncRead + Send>> = {
-            #[cfg(unix)]
+            #[cfg(all(unix, not(target_os = "macos")))]
             {
                 if std::io::stdin().is_terminal() {
                     match AsyncStdin::new() {
@@ -122,7 +122,7 @@ where
                     Ok(Box::new(tokio::io::stdin()))
                 }
             }
-            #[cfg(not(unix))]
+            #[cfg(any(not(unix), target_os = "macos"))]
             {
                 Ok(Box::new(tokio::io::stdin()))
             }

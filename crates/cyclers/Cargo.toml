@@ -27,7 +27,7 @@ tokio-util = { workspace = true, features = [], optional = true }
 anyhow = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 rustix = { workspace = true, features = [], optional = true }
 
 [features]
