@@ -19,7 +19,6 @@ futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
 matchbox_socket = { workspace = true, features = [], optional = true }
 paste = { workspace = true, features = [] }
-rustix = { workspace = true, features = [], optional = true }
 tokio = { workspace = true, features = ["sync"] }
 tokio-stream = { workspace = true, features = [] }
 tokio-util = { workspace = true, features = [], optional = true }
@@ -27,6 +26,9 @@ tokio-util = { workspace = true, features = [], optional = true }
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = [], optional = true }
 
 [features]
 default = ["terminal", "webrtc"]
