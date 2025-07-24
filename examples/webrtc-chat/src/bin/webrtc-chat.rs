@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use cyclers::ArcError;
-use cyclers::driver::terminal::{TerminalCommand, TerminalDriver, TerminalSource};
-use cyclers::driver::webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
+use cyclers_terminal::{TerminalCommand, TerminalDriver, TerminalSource};
+use cyclers_webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
 use futures_concurrency::stream::{Chain as _, Merge as _, Zip as _};
 use futures_lite::{StreamExt as _, stream};
 use futures_rx::{CombineLatest2, RxExt as _};

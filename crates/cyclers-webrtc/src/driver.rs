@@ -1,19 +1,17 @@
 use std::collections::HashMap;
 
+use cyclers::BoxError;
+use cyclers::driver::{Driver, Source};
 use futures_concurrency::future::{Race as _, TryJoin as _};
 use futures_concurrency::stream::Zip as _;
-use futures_core::Stream;
 use futures_lite::stream::Cycle;
-use futures_lite::{StreamExt as _, future, pin, stream};
+use futures_lite::{Stream, StreamExt as _, future, pin, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, ReplaySubject, RxExt as _};
 use matchbox_socket::WebRtcSocket;
 pub use matchbox_socket::{Packet, PeerId, PeerState};
 use tokio::sync::{Mutex, oneshot};
 use tokio_util::sync::CancellationToken;
-
-use super::{Driver, Source};
-use crate::BoxError;
 
 /// Type alias for an infinite [`Stream`] that yields the same [`WebRtcSocket`]
 /// item repeatedly.

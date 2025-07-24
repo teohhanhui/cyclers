@@ -1,11 +1,6 @@
-use futures_core::Stream;
+use futures_lite::Stream;
 
 use crate::BoxError;
-
-#[cfg(feature = "terminal")]
-pub mod terminal;
-#[cfg(feature = "webrtc")]
-pub mod webrtc;
 
 pub trait Driver<Sink>
 where

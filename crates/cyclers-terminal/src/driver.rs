@@ -3,16 +3,15 @@ use std::error::Error;
 use std::io::IsTerminal as _;
 use std::{fmt, io};
 
+use cyclers::BoxError;
+use cyclers::driver::{Driver, Source};
 use futures_concurrency::stream::{Merge as _, Zip as _};
-use futures_core::Stream;
-use futures_lite::{StreamExt as _, pin, stream};
+use futures_lite::{Stream, StreamExt as _, pin, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, RxExt as _};
 use tokio::io::{AsyncRead, AsyncWriteExt as _};
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 
-use super::{Driver, Source};
-use crate::BoxError;
 #[cfg(unix)]
 use crate::sys::unix::AsyncStdin;
 

@@ -1,23 +1,25 @@
 [package]
-name = "cyclers"
+name = "cyclers-webrtc"
 version = "0.1.0"
 authors = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
-description = { workspace = true }
+description = "A cyclers driver for WebRTC, based on matchbox"
 readme = "README.md"
 repository = { workspace = true }
 license = { workspace = true }
-keywords = { workspace = true }
-categories = { workspace = true }
+keywords = ["cyclers", "webrtc", "matchbox", "peer-to-peer", "mesh"]
+categories = ["asynchronous", "network-programming", "web-programming", "wasm"]
 
 [dependencies]
+cyclers = { version = "0.1.0", path = "../cyclers", default-features = false, features = [] }
+futures-channel = { workspace = true, features = ["std"] }
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
-paste = { workspace = true, features = [] }
+matchbox_socket = { workspace = true, features = [] }
 tokio = { workspace = true, features = ["sync"] }
-tokio-stream = { workspace = true, features = [] }
+tokio-util = { workspace = true, features = [] }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }

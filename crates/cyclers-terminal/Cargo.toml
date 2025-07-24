@@ -1,0 +1,31 @@
+[package]
+name = "cyclers-terminal"
+version = "0.1.0"
+authors = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+description = "A cyclers driver for the terminal"
+readme = "README.md"
+repository = { workspace = true }
+license = { workspace = true }
+keywords = ["cyclers", "terminal", "stdio", "stdin", "stdout"]
+categories = ["asynchronous", "command-line-interface"]
+
+[dependencies]
+cyclers = { version = "0.1.0", path = "../cyclers", default-features = false, features = [] }
+futures-concurrency = { workspace = true, features = ["std"] }
+futures-lite = { workspace = true, features = ["std"] }
+futures-rx = { workspace = true, features = [] }
+tokio = { workspace = true, features = ["io-std", "io-util"] }
+tokio-util = { workspace = true, features = ["codec"] }
+
+[dev-dependencies]
+anyhow = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+rustix = { workspace = true, features = ["fs"] }
+tokio = { workspace = true, features = ["net"] }
+
+[lints]
+workspace = true

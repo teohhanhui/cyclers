@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use futures_concurrency::future::TryJoin as _;
 use futures_concurrency::stream::Merge as _;
-use futures_core::Stream;
-use futures_lite::{StreamExt as _, pin};
+use futures_lite::{Stream, StreamExt as _, pin};
 use paste::paste;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;

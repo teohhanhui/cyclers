@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["*"]
+exclude = ["target"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.87.0"
+
+[workspace.dependencies]
+anyhow = { version = "1.0.92", default-features = false }
+futures-concurrency = { version = "7.6.3", default-features = false }
+futures-lite = { version = "2.5.0", default-features = false }
+futures-rx = { version = "0.2.1", default-features = false }
+tokio = { version = "1.45.0", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+arithmetic_side_effects = "warn"
+unused_trait_names = "warn"
+
+[patch.crates-io]
+futures-rx = { git = "https://github.com/teohhanhui/rxrs", branch = "feat/shared-arc-mutex" }

@@ -1,0 +1,17 @@
+[package]
+name = "example-terminal-echo"
+version = "0.1.0"
+edition = { workspace = true }
+rust-version = { workspace = true }
+publish = false
+
+[dependencies]
+anyhow = { workspace = true, features = ["std"] }
+cyclers = { path = "../../crates/cyclers", default-features = false, features = [] }
+cyclers-terminal = { path = "../../crates/cyclers-terminal", default-features = false, features = [] }
+futures-concurrency = { workspace = true, features = ["std"] }
+futures-lite = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

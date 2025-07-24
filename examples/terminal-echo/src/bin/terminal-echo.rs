@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Result};
-use cyclers::driver::terminal::{TerminalCommand, TerminalDriver, TerminalSource};
+use cyclers_terminal::{TerminalCommand, TerminalDriver, TerminalSource};
 use futures_concurrency::stream::{Chain as _, Zip as _};
 use futures_lite::{StreamExt as _, stream};
 
