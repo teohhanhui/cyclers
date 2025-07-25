@@ -21,7 +21,10 @@ tokio-stream = { workspace = true, features = [] }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[target.'cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))'.dev-dependencies]
+wasm-bindgen-test = { workspace = true, features = ["std"] }
 
 [lints]
 workspace = true

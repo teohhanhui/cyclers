@@ -24,6 +24,7 @@ rustix = { version = "1.0.3", default-features = false }
 tokio = { version = "1.45.0", default-features = false }
 tokio-stream = { version = "0.1.16", default-features = false }
 tokio-util = { version = "0.7.15", default-features = false }
+wasm-bindgen-test = { version = "0.3.50", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
