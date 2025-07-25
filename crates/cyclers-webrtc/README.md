@@ -1,5 +1,6 @@
 # cyclers-webrtc
 
+[![Build status](https://github.com/teohhanhui/cyclers/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/teohhanhui/cyclers/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/cyclers-webrtc.svg)](https://crates.io/crates/cyclers-webrtc)
 [![Documentation](https://docs.rs/cyclers-webrtc/badge.svg)](https://docs.rs/cyclers-webrtc)
 ![License](https://img.shields.io/crates/l/cyclers-webrtc.svg)
