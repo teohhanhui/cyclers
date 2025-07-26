@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
-use cyclers::ArcError;
+use cyclers::{ArcError, BoxError};
 use cyclers_terminal::{TerminalCommand, TerminalDriver, TerminalSource};
 use cyclers_webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
 use futures_concurrency::stream::{Chain as _, Merge as _, Zip as _};
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
                 .map(|input| {
                     input
                         .context("failed to read line from terminal")
-                        .map_err(|err| ArcError::from(err.into_boxed_dyn_error()))
+                        .map_err(|err| ArcError::from(BoxError::from(err)))
                 })
                 .share();
 
@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
             let print_received = webrtc_source.receive().flat_map(|(peer_id, packet)| {
                 let message = String::from_utf8(packet.into())
                     .context("received message with invalid UTF-8")
-                    .map_err(|err| ArcError::from(err.into_boxed_dyn_error()));
+                    .map_err(|err| ArcError::from(BoxError::from(err)));
                 stream::iter([
                     Ok(TerminalCommand::Write("\n".to_owned())),
                     message

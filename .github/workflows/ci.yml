@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check crates
+        run: cargo clippy --workspace --all-targets --all-features
+      - name: Check examples
+        run: cargo clippy --manifest-path examples/Cargo.toml --workspace --all-targets --all-features
+      - name: rustfmt crates
+        run: cargo fmt --all --check
+      - name: rustfmt examples
+        run: cargo fmt --manifest-path examples/Cargo.toml --all --check
+
+  check-feature-combinations:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+          fallback: none
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check crates
+        run: cargo hack check --feature-powerset --workspace --keep-going
+
+  test:
+    needs: check
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+          - beta
+          - nightly
+      fail-fast: false
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -Dwarnings
+      RUST_BACKTRACE: short
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-bindgen
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen
+          fallback: none
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Test crates
+        run: cargo test --workspace --all-targets --all-features
+      - name: Test crates (wasm32-unknown-unknown)
+        run: |
+          cargo test --target wasm32-unknown-unknown \
+            -p cyclers \
+            -p cyclers-webrtc \
+            --all-targets --all-features
+      - name: Test examples
+        if: ${{ matrix.toolchain != 'nightly' }}
+        run: cargo test --manifest-path examples/Cargo.toml --workspace --all-targets --all-features
+    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
+
+  test-msrv:
+    needs: check
+    env:
+      MSRV: 1.87.0
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.MSRV }}
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+          fallback: none
+      - name: Install cargo-minimal-versions
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-minimal-versions
+          fallback: none
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build crates
+        run: |
+          cargo minimal-versions build --workspace --all-features \
+            --direct --ignore-private # --detach-path-deps
+      - name: Test crates
+        run: |
+          cargo minimal-versions test --workspace --all-targets --all-features \
+            --direct --ignore-private
+
+  test-latest-deps:
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: allow
+      RUSTFLAGS: -Dwarnings
+      RUST_BACKTRACE: short
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Update dependencies
+        run: cargo update --verbose
+      - name: Build crates
+        run: cargo build --workspace --all-targets --all-features --verbose
+      - name: Test crates
+        run: cargo test --workspace --all-targets --all-features --verbose
+    continue-on-error: true
