@@ -39,8 +39,13 @@ pub trait Sinks {
     fn replicate_many(
         self,
         sink_senders: Self::SinkSenders,
-    ) -> impl Future<Output = Result<(), BoxError>>;
+    ) -> impl Future<Output = Result<(), BoxError>> + MaybeSend;
 }
+
+#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+pub trait MaybeSend: Send {}
+#[cfg(any(target_family = "wasm", target_os = "wasi"))]
+pub trait MaybeSend {}
 
 macro_rules! impl_main {
     (
@@ -317,9 +322,9 @@ macro_rules! impl_sinks {
     ) => {
         impl<$($sink,)+ $($t,)+ $($e,)+> Sinks for ($($sink,)+)
         where
-            $($sink: Stream<Item = Result<$t, $e>> + Send,)+
-            $($sink::Item: Send,)+
-            $($t: Send,)+
+            $($sink: Stream<Item = Result<$t, $e>> + MaybeSend,)+
+            $($sink::Item: MaybeSend,)+
+            $($t: MaybeSend,)+
             $($e: Into<BoxError>,)+
         {
             type SinkReceivers = ($(ReceiverStream<$t>,)+);
@@ -336,11 +341,6 @@ macro_rules! impl_sinks {
             }
 
             #[allow(
-                refining_impl_trait,
-                reason = "the `Send` bound is not placed on the trait method, in order to allow \
-                          implementing the `Sinks` trait for `!Send` types"
-            )]
-            #[allow(
                 clippy::manual_async_fn,
                 reason = "warning: use of `async fn` in public traits is discouraged as auto trait \
                           bounds cannot be specified"
@@ -348,7 +348,7 @@ macro_rules! impl_sinks {
             fn replicate_many(
                 self,
                 sink_senders: Self::SinkSenders,
-            ) -> impl Future<Output = Result<(), BoxError>> + Send {
+            ) -> impl Future<Output = Result<(), BoxError>> + MaybeSend {
                 async move {
                     let s = ($(self.$idx.then(|x| {
                         let tx = sink_senders.$idx.clone();
@@ -463,6 +463,11 @@ impl_sinks!(
     (10, Sink11, T11, E11),
     (11, Sink12, T12, E12)
 );
+
+#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+impl<T: Send> MaybeSend for T {}
+#[cfg(any(target_family = "wasm", target_os = "wasi"))]
+impl<T> MaybeSend for T {}
 
 pub fn setup<M, Drv, Snk>(
     main: M,

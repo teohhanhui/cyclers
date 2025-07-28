@@ -2,8 +2,12 @@ use anyhow::{Context as _, Result};
 use cyclers_terminal::{TerminalCommand, TerminalDriver, TerminalSource};
 use futures_concurrency::stream::{Chain as _, Zip as _};
 use futures_lite::{StreamExt as _, stream};
+#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+use tokio::main;
+#[cfg(all(target_os = "wasi", target_env = "p2"))]
+use wstd::main;
 
-#[tokio::main]
+#[main]
 async fn main() -> Result<()> {
     cyclers::run(
         |terminal_source: TerminalSource<_>| {

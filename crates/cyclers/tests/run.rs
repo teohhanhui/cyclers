@@ -4,10 +4,12 @@ use anyhow::Result;
 use cyclers::BoxError;
 use cyclers::driver::{Driver, Source};
 use futures_lite::{Stream, future, stream};
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
 use tokio::test;
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen_test::wasm_bindgen_test as test;
+#[cfg(all(target_os = "wasi", target_env = "p2"))]
+use wstd::test;
 
 #[test]
 async fn it_connects_main_and_drivers() -> Result<()> {

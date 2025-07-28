@@ -11,7 +11,12 @@ cyclers = { path = "../../crates/cyclers", default-features = false, features = 
 cyclers-terminal = { path = "../../crates/cyclers-terminal", default-features = false, features = [] }
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
+
+[target.'cfg(not(any(target_family = "wasm", target_os = "wasi")))'.dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(all(target_os = "wasi", target_env = "p2"))'.dependencies]
+wstd = { workspace = true, features = [] }
 
 [lints]
 workspace = true

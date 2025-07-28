@@ -1,3 +1,3 @@
-pub use self::driver::{WebRtcCommand, WebRtcDriver, WebRtcSource};
+pub use self::driver::{Packet, PeerId, PeerState, WebRtcCommand, WebRtcDriver, WebRtcSource};
 
 mod driver;

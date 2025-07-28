@@ -9,23 +9,41 @@ readme = "README.md"
 repository = { workspace = true }
 license = { workspace = true }
 keywords = ["cyclers", "terminal", "stdio", "stdin", "stdout"]
-categories = ["asynchronous", "command-line-interface"]
+categories = ["asynchronous", "command-line-interface", "wasm"]
 
 [dependencies]
 cyclers = { version = "0.1.0", path = "../cyclers", default-features = false, features = [] }
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
-tokio = { workspace = true, features = ["io-std", "io-util"] }
-tokio-util = { workspace = true, features = ["codec"] }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+[target.'cfg(not(any(target_family = "wasm", target_os = "wasi")))'.dependencies]
+tokio = { workspace = true, features = ["io-std", "io-util"] }
+tokio-util = { workspace = true, features = ["codec"] }
+
+[target.'cfg(all(unix, not(any(target_family = "wasm", target_os = "wasi")), not(target_os = "macos")))'.dependencies]
 rustix = { workspace = true, features = ["fs"] }
 tokio = { workspace = true, features = ["net"] }
 
+[target.'cfg(all(target_os = "wasi", target_env = "p2"))'.dependencies]
+bytes = { workspace = true, features = ["std"] }
+wstd = { workspace = true, features = [] }
+
+[target.'cfg(not(any(target_family = "wasm", target_os = "wasi")))'.dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
 [lints]
 workspace = true
+
+[package.metadata.docs.rs]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "i686-unknown-linux-gnu",
+    "i686-pc-windows-msvc",
+    "wasm32-wasip2",
+]
