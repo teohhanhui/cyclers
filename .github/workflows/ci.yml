@@ -20,10 +20,15 @@ jobs:
       RUSTFLAGS: -Dwarnings
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
-          components: clippy, rustfmt
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -31,10 +36,12 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features
       - name: Check examples
         run: cargo clippy --manifest-path examples/Cargo.toml --workspace --all-targets --all-features
+      - name: Uncomment all in .rustfmt.toml
+        run: sed -r 's/^# *//g' -i .rustfmt.toml
       - name: rustfmt crates
-        run: cargo fmt --all --check
+        run: cargo +nightly fmt --all --check
       - name: rustfmt examples
-        run: cargo fmt --manifest-path examples/Cargo.toml --all --check
+        run: cargo +nightly fmt --manifest-path examples/Cargo.toml --all --check
 
   check-feature-combinations:
     runs-on: ubuntu-latest
@@ -74,11 +81,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ matrix.toolchain }}
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, wasm32-wasip2
       - name: Install wasm-bindgen
         uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen
+          fallback: none
+      - name: Install wasmtime
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasmtime
           fallback: none
       - uses: Swatinem/rust-cache@v2
         with:
@@ -89,7 +101,14 @@ jobs:
         run: |
           cargo test --target wasm32-unknown-unknown \
             -p cyclers \
+            -p cyclers-http \
             -p cyclers-webrtc \
+            --all-targets --all-features
+      - name: Test crates (wasm32-wasip2)
+        run: |
+          cargo test --target wasm32-wasip2 \
+            -p cyclers \
+            -p cyclers-http \
             --all-targets --all-features
       - name: Test examples
         if: ${{ matrix.toolchain != 'nightly' }}

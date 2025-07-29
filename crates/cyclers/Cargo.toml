@@ -21,10 +21,26 @@ tokio-stream = { workspace = true, features = [] }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
+
+[target.'cfg(not(any(target_family = "wasm", target_os = "wasi")))'.dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
 
-[target.'cfg(all(target_arch = "wasm32", any(target_os = "unknown", target_os = "none")))'.dev-dependencies]
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]
 wasm-bindgen-test = { workspace = true, features = ["std"] }
+
+[target.'cfg(all(target_os = "wasi", target_env = "p2"))'.dev-dependencies]
+wstd = { workspace = true, features = [] }
 
 [lints]
 workspace = true
+
+[package.metadata.docs.rs]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "i686-unknown-linux-gnu",
+    "i686-pc-windows-msvc",
+    "wasm32-unknown-unknown",
+    "wasm32-wasip2",
+]

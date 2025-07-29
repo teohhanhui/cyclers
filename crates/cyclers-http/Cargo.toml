@@ -1,28 +1,33 @@
 [package]
-name = "cyclers-webrtc"
+name = "cyclers-http"
 version = "0.1.0"
 authors = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
-description = "A cyclers driver for WebRTC, based on matchbox"
+description = "A cyclers driver for HTTP"
 readme = "README.md"
 repository = { workspace = true }
 license = { workspace = true }
-keywords = ["cyclers", "webrtc", "matchbox", "peer-to-peer", "mesh"]
-categories = ["asynchronous", "network-programming", "web-programming", "wasm"]
+keywords = ["cyclers", "http", "client", "request"]
+categories = ["asynchronous", "web-programming::http-client", "wasm"]
 
 [dependencies]
+bytes = { workspace = true, features = ["std"] }
 cyclers = { version = "0.1.0", path = "../cyclers", default-features = false, features = [] }
-futures-channel = { workspace = true, features = ["std"] }
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
-matchbox_socket = { workspace = true, features = [] }
-tokio = { workspace = true, features = ["sync"] }
-tokio-util = { workspace = true, features = [] }
+http = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
+
+[target.'cfg(any(not(any(target_family = "wasm", target_os = "wasi")), all(target_family = "wasm", target_os = "unknown")))'.dependencies]
+http-body-util = { workspace = true, features = [] }
+reqwest = { workspace = true, features = [] }
+
+[target.'cfg(all(target_os = "wasi", target_env = "p2"))'.dependencies]
+wstd = { workspace = true, features = [] }
 
 [target.'cfg(not(any(target_family = "wasm", target_os = "wasi")))'.dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
@@ -41,4 +46,5 @@ targets = [
     "i686-unknown-linux-gnu",
     "i686-pc-windows-msvc",
     "wasm32-unknown-unknown",
+    "wasm32-wasip2",
 ]

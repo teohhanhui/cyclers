@@ -40,6 +40,7 @@ where
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub enum WebRtcCommand {
     Connect { room_url: String },
     Disconnect,

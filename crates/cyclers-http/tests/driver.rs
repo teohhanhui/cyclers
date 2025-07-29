@@ -1,13 +1,15 @@
 use cyclers::driver::Driver as _;
-use cyclers_webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
+use cyclers_http::{HttpCommand, HttpDriver, HttpSource};
 use futures_lite::stream;
 #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
 use tokio::test;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen_test::wasm_bindgen_test as test;
+#[cfg(all(target_os = "wasi", target_env = "p2"))]
+use wstd::test;
 
 #[test]
 async fn it_returns_source_when_called_with_sink() {
-    let sink = stream::pending::<WebRtcCommand>();
-    let (_source, _fut): (WebRtcSource<_>, _) = WebRtcDriver.call(sink);
+    let sink = stream::pending::<HttpCommand>();
+    let (_source, _fut): (HttpSource<_>, _) = HttpDriver.call(sink);
 }

@@ -1,5 +1,5 @@
 [package]
-name = "example-webrtc-chat"
+name = "example-http-wiki"
 version = "0.1.0"
 edition = { workspace = true }
 rust-version = { workspace = true }
@@ -8,14 +8,20 @@ publish = false
 [dependencies]
 anyhow = { workspace = true, features = ["std"] }
 cyclers = { path = "../../crates/cyclers", default-features = false, features = [] }
+cyclers-http = { path = "../../crates/cyclers-http", default-features = false, features = [] }
 cyclers-terminal = { path = "../../crates/cyclers-terminal", default-features = false, features = [] }
-cyclers-webrtc = { path = "../../crates/cyclers-webrtc", default-features = false, features = [] }
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
+serde_json = { workspace = true, features = ["preserve_order", "std"] }
+url = { workspace = true, features = ["std"] }
 
 [target.'cfg(not(any(target_family = "wasm", target_os = "wasi")))'.dependencies]
+reqwest = { workspace = true, features = ["default-tls"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(all(target_os = "wasi", target_env = "p2"))'.dependencies]
+wstd = { workspace = true, features = [] }
 
 [lints]
 workspace = true
