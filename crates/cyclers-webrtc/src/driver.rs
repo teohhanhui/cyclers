@@ -5,7 +5,7 @@ use cyclers::driver::{Driver, Source};
 use futures_concurrency::future::{Race as _, TryJoin as _};
 use futures_concurrency::stream::Zip as _;
 use futures_lite::stream::Cycle;
-use futures_lite::{Stream, StreamExt as _, future, pin, stream};
+use futures_lite::{Stream, StreamExt as _, pin, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, ReplaySubject, RxExt as _};
 use matchbox_socket::WebRtcSocket;
@@ -147,37 +147,41 @@ where
                         let channel_sender = channel_sender.clone();
                         let close_token = close_token.child_token();
                         async move {
-                            let s = stream::unfold((channel_sender, send).zip(), |mut s| {
-                                let close_token = &close_token;
-                                async move {
-                                    let (channel_sender, send) = (s.next(), async move {
-                                        close_token.cancelled().await;
-                                        None
-                                    })
-                                        .race()
-                                        .await?;
-                                    let WebRtcCommand::Send(packet, peer_id) = &*send else {
-                                        unreachable!();
-                                    };
-                                    Some((
-                                        channel_sender
-                                            .unbounded_send((*peer_id, packet.clone()))
-                                            .map_err(BoxError::from),
-                                        s,
-                                    ))
-                                }
-                            });
+                            let s =
+                                stream::unfold((channel_sender, send.clone()).zip(), |mut s| {
+                                    let close_token = &close_token;
+                                    async move {
+                                        let (channel_sender, send) = (s.next(), async move {
+                                            close_token.cancelled().await;
+                                            None
+                                        })
+                                            .race()
+                                            .await?;
+                                        let WebRtcCommand::Send(packet, peer_id) = &*send else {
+                                            unreachable!();
+                                        };
+                                        Some((
+                                            channel_sender
+                                                .unbounded_send((*peer_id, packet.clone()))
+                                                .map_err(BoxError::from),
+                                            s,
+                                        ))
+                                    }
+                                });
                             pin!(s);
 
                             while s.try_next().await?.is_some() {}
-                            // HACK: Prevent the driver future from being dropped.
-                            future::pending::<()>().await;
+                            // Allow the send handler to exit when the send "sink" stream has
+                            // finished.
+                            let mut send = send;
+                            while send.next().await.is_some() {}
                             Ok(())
                         }
                     },
                     async move {
-                        let s = (channel_sender, channel_receiver, disconnect).zip().then(
-                            |(channel_sender, channel_receiver, disconnect)| {
+                        let s = (channel_sender, channel_receiver, disconnect.clone())
+                            .zip()
+                            .then(|(channel_sender, channel_receiver, disconnect)| {
                                 let WebRtcCommand::Disconnect = &*disconnect else {
                                     unreachable!();
                                 };
@@ -193,20 +197,20 @@ where
                                     let mut channel_receiver = channel_receiver.lock().await;
                                     channel_receiver.close();
                                 }
-                            },
-                        );
+                            });
                         pin!(s);
 
                         s.next().await;
-                        // HACK: Prevent the driver future from being dropped.
-                        future::pending::<()>().await;
+                        // Allow the disconnect handler to exit when the disconnect "sink" stream
+                        // has finished.
+                        let mut disconnect = disconnect;
+                        while disconnect.next().await.is_some() {}
                         Ok(())
                     },
                     async move {
                         // Poll the message loop future from `matchbox_socket`.
                         message_loop_fut.await?;
-                        // HACK: Prevent the driver future from being dropped.
-                        future::pending::<()>().await;
+                        // Allow the driver future to exit when the message loop future exits.
                         Ok::<_, BoxError>(())
                     },
                 )
