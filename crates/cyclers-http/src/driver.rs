@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use cyclers::BoxError;
 use cyclers::driver::{Driver, Source};
-use futures_lite::{Stream, StreamExt as _, future, stream};
+use futures_lite::{Stream, StreamExt as _, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, RxExt as _};
 pub use http::{Request, Response};
@@ -35,7 +35,12 @@ where
     fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>) {
         let sink = sink.share();
 
-        (HttpSource { sink }, future::pending())
+        (HttpSource { sink: sink.clone() }, async move {
+            // Allow the driver future to exit when the "sink" stream has finished.
+            let mut sink = sink;
+            while sink.next().await.is_some() {}
+            Ok(())
+        })
     }
 }
 
