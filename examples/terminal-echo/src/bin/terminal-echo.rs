@@ -19,9 +19,9 @@ async fn main() -> Result<ExitCode> {
                 Ok::<_, anyhow::Error>(TerminalCommand::Write(format!("{input}\n")))
             });
 
-            // Interleave reads and echoes. Send a read command, and then wait to
-            // receive+print the line being read.
             let terminal_sink = (
+                // Interleave reads and echoes. Send a read command, and then wait to receive the
+                // line being read and print it back out.
                 stream::once(Ok(TerminalCommand::ReadLine)),
                 (echo, stream::repeat_with(|| Ok(TerminalCommand::ReadLine)))
                     .zip()
