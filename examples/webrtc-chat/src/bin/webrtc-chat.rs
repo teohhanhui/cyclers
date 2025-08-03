@@ -1,3 +1,4 @@
+use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
@@ -9,9 +10,9 @@ use futures_lite::{StreamExt as _, stream};
 use futures_rx::{CombineLatest2, RxExt as _};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<ExitCode> {
     cyclers::run(
-        |webrtc_source: WebRtcSource<_>, terminal_source: TerminalSource<_>| {
+        |terminal_source: TerminalSource<_>, webrtc_source: WebRtcSource<_>| {
             let connect = stream::once(WebRtcCommand::Connect {
                 room_url: format!(
                     "ws://{host}:{port}/{room_id}",
@@ -151,9 +152,9 @@ async fn main() -> Result<()> {
             )
                 .merge();
 
-            (webrtc_sink, terminal_sink)
+            (terminal_sink, webrtc_sink)
         },
-        (WebRtcDriver, TerminalDriver),
+        (TerminalDriver, WebRtcDriver),
     )
     .await
     .map_err(anyhow::Error::from_boxed)

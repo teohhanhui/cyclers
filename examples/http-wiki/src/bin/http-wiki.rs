@@ -1,3 +1,4 @@
+use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow};
@@ -14,9 +15,9 @@ use url::Url;
 use wstd::main;
 
 #[main]
-async fn main() -> Result<()> {
+async fn main() -> Result<ExitCode> {
     cyclers::run(
-        |http_source: HttpSource<_>, _terminal_source: TerminalSource<_>| {
+        |_terminal_source: TerminalSource<_>, http_source: HttpSource<_>| {
             let url = stream::once(
                 Url::parse_with_params("https://en.wikipedia.org/w/api.php", &[
                     ("action", "query"),
@@ -104,22 +105,22 @@ async fn main() -> Result<()> {
 
             let http_sink = (send_request,).chain();
 
-            let terminal_sink =
-                (print_title, print_extract, print_url)
-                    .zip()
-                    .flat_map(|(title, extract, url)| {
-                        stream::iter([
-                            title,
-                            Ok(TerminalCommand::Write(format!("{:─<80}\n", ""))),
-                            extract,
-                            Ok(TerminalCommand::Write(format!("{:─<80}\n", ""))),
-                            url,
-                        ])
-                    });
+            let terminal_sink = ((print_title, print_extract, print_url).zip().flat_map(
+                |(title, extract, url)| {
+                    stream::iter([
+                        title,
+                        Ok(TerminalCommand::Write(format!("{:─<80}\n", ""))),
+                        extract,
+                        Ok(TerminalCommand::Write(format!("{:─<80}\n", ""))),
+                        url,
+                    ])
+                },
+            ),)
+                .chain();
 
-            (http_sink, terminal_sink)
+            (terminal_sink, http_sink)
         },
-        (HttpDriver, TerminalDriver),
+        (TerminalDriver, HttpDriver),
     )
     .await
     .map_err(anyhow::Error::from_boxed)

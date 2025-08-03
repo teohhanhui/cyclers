@@ -30,8 +30,15 @@ async fn it_connects_main_and_drivers() -> Result<()> {
     {
         type Input = MockCommand;
         type Source = MockSource<Sink>;
+        type Termination = ();
 
-        fn call(self, _sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>) {
+        fn call(
+            self,
+            _sink: Sink,
+        ) -> (
+            Self::Source,
+            impl Future<Output = Result<Self::Termination, BoxError>>,
+        ) {
             (MockSource { sink: PhantomData }, future::ready(Ok(())))
         }
     }
