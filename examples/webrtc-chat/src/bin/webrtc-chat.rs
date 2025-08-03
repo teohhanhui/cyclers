@@ -8,11 +8,14 @@ use cyclers_webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
 use futures_concurrency::stream::{Chain as _, Merge as _, Zip as _};
 use futures_lite::{StreamExt as _, stream};
 use futures_rx::{CombineLatest2, RxExt as _};
+#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+use tokio::main;
 
-#[tokio::main]
+#[main]
 async fn main() -> Result<ExitCode> {
     cyclers::run(
         |terminal_source: TerminalSource<_>, webrtc_source: WebRtcSource<_>| {
+            // Configure the connection to the `matchbox_server`.
             let connect = stream::once(WebRtcCommand::Connect {
                 room_url: format!(
                     "ws://{host}:{port}/{room_id}",
@@ -22,7 +25,7 @@ async fn main() -> Result<ExitCode> {
                 ),
             });
 
-            // Read lines of input from the terminal.
+            // Receive lines of input text that have been read from the terminal.
             let input = terminal_source
                 .read_line()
                 .map(|input| {
@@ -63,23 +66,6 @@ async fn main() -> Result<ExitCode> {
                 .filter(|command| matches!(**command, WebRtcCommand::Disconnect));
             let slash_command = slash_command.map(|command| (*command).clone());
 
-            // Each time we receive a line read from the terminal, we send out an echo but
-            // we do not print it back out.
-            let pseudo_echo = input.clone().map(|input| match &*input {
-                Ok(_input) => stream::iter(vec![
-                    Ok(TerminalCommand::Write("".to_owned())),
-                    Ok(TerminalCommand::Flush),
-                ]),
-                Err(err) => stream::iter(vec![Err(Arc::clone(err))]),
-            });
-
-            // Stop reading input after we have sent the disconnect command.
-            let read_until_disconnect =
-                stream::stop_after_future(stream::repeat(TerminalCommand::ReadLine), async move {
-                    let mut disconnect = disconnect.boxed();
-                    disconnect.next().await;
-                });
-
             // Broadcast each message to all connected peers.
             let connected_peers = webrtc_source.connected_peers();
             let send = (
@@ -112,42 +98,62 @@ async fn main() -> Result<ExitCode> {
                 ])
             });
 
-            // First, connect to the `matchbox_server`.
-            //
-            // Then continue to send out any commands or messages.
-            let webrtc_sink = (connect, (slash_command, send).merge())
+            let webrtc_sink = (
+                // Connect to the `matchbox_server`.
+                connect,
+                // Send out any commands or messages.
+                (slash_command, send).merge(),
+            )
                 .chain()
                 .map(Ok::<_, ArcError>);
 
+            // After reading a line from the terminal, we provide interactive feedback but
+            // we do not print the line back out.
+            let feedback = input.clone().map(|input| match &*input {
+                Ok(_input) => stream::iter(vec![
+                    Ok(TerminalCommand::Write("".to_owned())),
+                    Ok(TerminalCommand::Flush),
+                ]),
+                Err(err) => stream::iter(vec![Err(Arc::clone(err))]),
+            });
+
+            let first_read = stream::iter([
+                TerminalCommand::Write(">> ".to_owned()),
+                TerminalCommand::Flush,
+                TerminalCommand::ReadLine,
+            ]);
+
+            // Read the next line of user input from the terminal, as long as we have not
+            // been asked to disconnect.
+            let read = stream::stop_after_future(
+                stream::repeat(stream::iter(vec![
+                    TerminalCommand::Write(">> ".to_owned()),
+                    TerminalCommand::Flush,
+                    TerminalCommand::ReadLine,
+                ])),
+                {
+                    let mut disconnect = disconnect.boxed();
+                    async move {
+                        disconnect.next().await;
+                    }
+                },
+            );
+
+            let bye = stream::once(stream::iter(vec![TerminalCommand::Write(
+                "Bye!\n".to_owned(),
+            )]));
+
             let terminal_sink = (
-                // Interleave reads and pseudo-echoes. Send a read command, and then wait to
-                // receive+pseudo-print the line being read.
+                // Interleave reads and feedback. Send a read command, and then wait to receive the
+                // line being read and provide interactive feedback.
                 (
-                    stream::iter([
-                        TerminalCommand::Write(">> ".to_owned()),
-                        TerminalCommand::Flush,
-                        TerminalCommand::ReadLine,
-                    ])
-                    .map(Ok),
-                    (
-                        pseudo_echo,
-                        read_until_disconnect
-                            .map(|read| {
-                                stream::iter(vec![
-                                    TerminalCommand::Write(">> ".to_owned()),
-                                    TerminalCommand::Flush,
-                                    read,
-                                ])
-                            })
-                            .or(stream::once(stream::iter(vec![TerminalCommand::Write(
-                                "Bye!\n".to_owned(),
-                            )]))),
-                    )
+                    first_read.map(Ok),
+                    (feedback, read.or(bye))
                         .zip()
-                        .flat_map(|(echo, read)| (echo, read.map(Ok)).chain()),
+                        .flat_map(|(feedback, read)| (feedback, read.map(Ok)).chain()),
                 )
                     .chain(),
-                // Don't worry. Received messages are actually being printed.
+                // Print out any messages immediately as they are received from peers.
                 print_received,
             )
                 .merge();

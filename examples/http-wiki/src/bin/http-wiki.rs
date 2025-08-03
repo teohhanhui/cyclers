@@ -18,6 +18,7 @@ use wstd::main;
 async fn main() -> Result<ExitCode> {
     cyclers::run(
         |_terminal_source: TerminalSource<_>, http_source: HttpSource<_>| {
+            // Set up the URL for querying the MediaWiki API.
             let url = stream::once(
                 Url::parse_with_params("https://en.wikipedia.org/w/api.php", &[
                     ("action", "query"),
@@ -33,10 +34,13 @@ async fn main() -> Result<ExitCode> {
                 ])
                 .context("failed to parse url"),
             );
+
+            // Prepare the HTTP request to send to the server.
             let send_request = url.map(|url| {
                 url.and_then(|url| {
                     Ok(HttpCommand::SendRequest({
                         Request::builder()
+                            .method("GET")
                             .uri(url.as_str())
                             .body(vec![].into())
                             .context("failed to build request")?
@@ -44,10 +48,13 @@ async fn main() -> Result<ExitCode> {
                 })
             });
 
+            // Receive the HTTP response from the server.
             let response = http_source.response().map(|res| {
                 res.map_err(anyhow::Error::from_boxed)
                     .context("failed to process response")
             });
+
+            // Parse response body as JSON.
             let response_json = response
                 .map(|res| {
                     res.and_then(|res| {
@@ -59,6 +66,7 @@ async fn main() -> Result<ExitCode> {
                 })
                 .share();
 
+            // Get the first "page" from the query result.
             let page = response_json
                 .clone()
                 .map(|json| match &*json {
@@ -105,17 +113,20 @@ async fn main() -> Result<ExitCode> {
 
             let http_sink = (send_request,).chain();
 
-            let terminal_sink = ((print_title, print_extract, print_url).zip().flat_map(
-                |(title, extract, url)| {
-                    stream::iter([
-                        title,
-                        Ok(TerminalCommand::Write(format!("{:─<80}\n", ""))),
-                        extract,
-                        Ok(TerminalCommand::Write(format!("{:─<80}\n", ""))),
-                        url,
-                    ])
-                },
-            ),)
+            let terminal_sink = (
+                // Print out the info with separators.
+                (print_title, print_extract, print_url)
+                    .zip()
+                    .flat_map(|(title, extract, url)| {
+                        stream::iter([
+                            title,
+                            Ok(TerminalCommand::Write(format!("{:─<80}\n", ""))),
+                            extract,
+                            Ok(TerminalCommand::Write(format!("{:─<80}\n", ""))),
+                            url,
+                        ])
+                    }),
+            )
                 .chain();
 
             (terminal_sink, http_sink)

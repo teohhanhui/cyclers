@@ -28,5 +28,5 @@ unused_trait_names = "warn"
 
 [patch.crates-io]
 futures-rx = { git = "https://github.com/teohhanhui/rxrs", branch = "feat/shared-arc-mutex" }
-wstd = { git = "https://github.com/bytecodealliance/wstd", branch = "main" }
-wstd-macro = { git = "https://github.com/bytecodealliance/wstd", branch = "main" }
+wstd = { git = "https://github.com/teohhanhui/wstd", branch = "allow_independent_futures" }
+wstd-macro = { git = "https://github.com/teohhanhui/wstd", branch = "allow_independent_futures" }
