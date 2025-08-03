@@ -1,3 +1,5 @@
+use std::process::ExitCode;
+
 use anyhow::{Context as _, Result};
 use cyclers_terminal::{TerminalCommand, TerminalDriver, TerminalSource};
 use futures_concurrency::stream::{Chain as _, Zip as _};
@@ -8,7 +10,7 @@ use tokio::main;
 use wstd::main;
 
 #[main]
-async fn main() -> Result<()> {
+async fn main() -> Result<ExitCode> {
     cyclers::run(
         |terminal_source: TerminalSource<_>| {
             // Each time we receive a line read from the terminal, we print it back out.

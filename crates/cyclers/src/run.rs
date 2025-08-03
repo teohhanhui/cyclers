@@ -3,12 +3,13 @@ use std::sync::Arc;
 
 use futures_concurrency::future::TryJoin as _;
 use futures_concurrency::stream::Merge as _;
-use futures_lite::{Stream, StreamExt as _, pin};
+use futures_lite::{Stream, StreamExt as _, pin, stream};
 use paste::paste;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::driver::{Driver, Source};
+use crate::util::{head, head_or_tail};
 
 const SINK_PROXY_BUFFER_LEN: usize = 1;
 
@@ -24,8 +25,15 @@ pub trait Main<Sources, Sinks> {
 
 pub trait Drivers<Sinks> {
     type Sources: Sources;
+    type Termination;
 
-    fn call(self, sinks: Sinks) -> (Self::Sources, impl Future<Output = Result<(), BoxError>>);
+    fn call(
+        self,
+        sinks: Sinks,
+    ) -> (
+        Self::Sources,
+        impl Future<Output = Result<Self::Termination, BoxError>>,
+    );
 }
 
 pub trait Sources {}
@@ -172,19 +180,35 @@ macro_rules! impl_drivers {
             $($driver: Driver<$sink>,)+
         {
             type Sources = ($($driver::Source,)+);
+            type Termination = head!($($driver::Termination),+);
 
             fn call(
                 self,
                 sinks: ($($sink,)+),
-            ) -> (Self::Sources, impl Future<Output = Result<(), BoxError>>) {
+            ) -> (Self::Sources, impl Future<Output = Result<Self::Termination, BoxError>>) {
                 paste! {
                     $(
                         let ([<source $idx>], [<fut $idx>]) = self.$idx.call(sinks.$idx);
                     )+
 
                     (($([<source $idx>],)+), async move {
-                        ($([<fut $idx>],)+).try_join().await?;
-                        Ok(())
+                        let s = head_or_tail!(
+                            $(
+                                (
+                                    stream::once_future([<fut $idx>]).map(|out| out.map(Some)),
+                                    stream::once_future([<fut $idx>]).map(|out| out.map(|_| None))
+                                )
+                            ),+
+                        )
+                            .merge();
+                        pin!(s);
+
+                        while let Some(out) = s.try_next().await? {
+                            if let Some(out) = out {
+                                return Ok(out);
+                            }
+                        }
+                        unreachable!()
                     })
                 }
             }
@@ -350,15 +374,23 @@ macro_rules! impl_sinks {
                 sink_senders: Self::SinkSenders,
             ) -> impl Future<Output = Result<(), BoxError>> + MaybeSend {
                 async move {
-                    let s = ($(self.$idx.then(|x| {
-                        let tx = sink_senders.$idx.clone();
-                        async move {
-                            let x = x.map_err(Into::into)?;
-                            let permit = tx.reserve().await.unwrap();
-                            permit.send(x);
-                            Ok::<_, BoxError>(())
-                        }
-                    }),)+)
+                    let s = (
+                        $(
+                            stream::unfold(
+                                (Box::pin(self.$idx), sink_senders.$idx),
+                                async move |(mut sink, tx)| {
+                                    let x = match sink.next().await? {
+                                        Ok(x) => x,
+                                        Err(err) => return Some((Err(err.into()), (sink, tx))),
+                                    };
+                                    let permit = tx.reserve().await.ok()?;
+                                    permit.send(x);
+
+                                    Some((Ok(()), (sink, tx)))
+                                },
+                            ),
+                        )+
+                    )
                         .merge();
                     pin!(s);
 
@@ -474,7 +506,7 @@ pub fn setup<M, Drv, Snk>(
     drivers: Drv,
 ) -> (
     // Drv::Sources, Snk,
-    impl AsyncFnOnce() -> Result<(), BoxError>,
+    impl AsyncFnOnce() -> Result<Drv::Termination, BoxError>,
 )
 where
     M: Main<Drv::Sources, Snk>,
@@ -490,7 +522,10 @@ where
 
 pub fn setup_reusable<Drv, Snk>(
     drivers: Drv,
-) -> (Drv::Sources, impl AsyncFnOnce(Snk) -> Result<(), BoxError>)
+) -> (
+    Drv::Sources,
+    impl AsyncFnOnce(Snk) -> Result<Drv::Termination, BoxError>,
+)
 where
     Drv: Drivers<Snk::SinkReceivers>,
     Snk: Sinks,
@@ -499,14 +534,14 @@ where
     let (sources, drivers_fut) = drivers.call(sink_proxies);
 
     (sources, async |sinks: Snk| {
-        (sinks.replicate_many(sink_senders), drivers_fut)
+        let (_, out) = (sinks.replicate_many(sink_senders), drivers_fut)
             .try_join()
             .await?;
-        Ok(())
+        Ok(out)
     })
 }
 
-pub async fn run<M, Drv, Snk>(main: M, drivers: Drv) -> Result<(), BoxError>
+pub async fn run<M, Drv, Snk>(main: M, drivers: Drv) -> Result<Drv::Termination, BoxError>
 where
     M: Main<Drv::Sources, Snk>,
     Drv: Drivers<Snk::SinkReceivers>,

@@ -31,16 +31,18 @@ where
 {
     type Input = HttpCommand;
     type Source = HttpSource<Sink>;
+    type Termination = ();
 
-    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>) {
+    fn call(
+        self,
+        sink: Sink,
+    ) -> (
+        Self::Source,
+        impl Future<Output = Result<Self::Termination, BoxError>>,
+    ) {
         let sink = sink.share();
 
-        (HttpSource { sink: sink.clone() }, async move {
-            // Allow the driver future to exit when the "sink" stream has finished.
-            let mut sink = sink;
-            while sink.next().await.is_some() {}
-            Ok(())
-        })
+        (HttpSource { sink: sink.clone() }, async move { Ok(()) })
     }
 }
 
@@ -69,7 +71,7 @@ where
 
             let (parts, body) = request.clone().into_parts();
             let request = Request::from_parts(parts, body);
-            let request = reqwest::Request::try_from(request).expect("request should be valid");
+            let request = reqwest::Request::try_from(request).expect("`request` should be valid");
 
             match reqwest::Client::new().execute(request).await {
                 Ok(response) => {

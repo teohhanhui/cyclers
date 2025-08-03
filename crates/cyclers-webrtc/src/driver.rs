@@ -53,8 +53,15 @@ where
 {
     type Input = WebRtcCommand;
     type Source = WebRtcSource<Sink>;
+    type Termination = ();
 
-    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>) {
+    fn call(
+        self,
+        sink: Sink,
+    ) -> (
+        Self::Source,
+        impl Future<Output = Result<Self::Termination, BoxError>>,
+    ) {
         let sink = sink.share();
         let connect = sink
             .clone()
@@ -119,13 +126,15 @@ where
                 let (channel_sender, channel_receiver) = socket.take_channel(0).unwrap().split();
                 // Send things back out through oneshot channels so that they can be used
                 // elsewhere in this driver.
-                socket_tx.send(socket).expect("`socket_rx` dropped");
+                socket_tx
+                    .send(socket)
+                    .expect("`socket_rx` should not be disconnected");
                 channel_sender_tx
                     .send(channel_sender)
-                    .expect("`channel_sender_rx` dropped");
+                    .expect("`channel_sender_rx` should not be disconnected");
                 channel_receiver_tx
                     .send(channel_receiver)
-                    .expect("`channel_receiver_rx` dropped");
+                    .expect("`channel_receiver_rx` should not be disconnected");
                 // This message loop future from `matchbox_socket` will need to be polled in the
                 // driver future.
                 return message_loop_fut.await;
@@ -171,10 +180,6 @@ where
                             pin!(s);
 
                             while s.try_next().await?.is_some() {}
-                            // Allow the send handler to exit when the send "sink" stream has
-                            // finished.
-                            let mut send = send;
-                            while send.next().await.is_some() {}
                             Ok(())
                         }
                     },
@@ -201,16 +206,11 @@ where
                         pin!(s);
 
                         s.next().await;
-                        // Allow the disconnect handler to exit when the disconnect "sink" stream
-                        // has finished.
-                        let mut disconnect = disconnect;
-                        while disconnect.next().await.is_some() {}
                         Ok(())
                     },
                     async move {
                         // Poll the message loop future from `matchbox_socket`.
                         message_loop_fut.await?;
-                        // Allow the driver future to exit when the message loop future exits.
                         Ok::<_, BoxError>(())
                     },
                 )

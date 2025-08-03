@@ -5,6 +5,7 @@ use std::error::Error;
     not(target_os = "macos")
 ))]
 use std::io::IsTerminal as _;
+use std::process::ExitCode;
 use std::{fmt, io};
 
 #[cfg(all(target_os = "wasi", target_env = "p2"))]
@@ -38,7 +39,7 @@ where
     sink: Shared<Sink, PublishSubject<Sink::Item>>,
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 #[non_exhaustive]
 pub enum TerminalCommand {
     /// Prints to the standard output. A newline is not printed at the end of
@@ -53,6 +54,8 @@ pub enum TerminalCommand {
     /// Flushes the standard output stream, ensuring that all intermediately
     /// buffered contents reach their destination.
     Flush,
+    /// Exits with the specified status code.
+    Exit(ExitCode),
 }
 
 /// An error returned from [`TerminalSource::read_line`].
@@ -84,15 +87,25 @@ where
 {
     type Input = TerminalCommand;
     type Source = TerminalSource<Sink>;
+    type Termination = ExitCode;
 
-    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>) {
+    fn call(
+        self,
+        sink: Sink,
+    ) -> (
+        Self::Source,
+        impl Future<Output = Result<Self::Termination, BoxError>>,
+    ) {
         let sink = sink.share();
         let write = sink
             .clone()
-            .filter(|command| matches!(**command, TerminalCommand::Write(_)));
+            .filter(|command| matches!(**command, TerminalCommand::Write(..)));
         let flush = sink
             .clone()
             .filter(|command| matches!(**command, TerminalCommand::Flush));
+        let exit = sink
+            .clone()
+            .filter(|command| matches!(**command, TerminalCommand::Exit(..)));
 
         let mut stdout = {
             #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
@@ -106,7 +119,7 @@ where
         };
 
         (TerminalSource { sink }, async move {
-            let s = (write, flush).merge();
+            let s = (write, flush, exit).merge();
             pin!(s);
 
             while let Some(command) = s.next().await {
@@ -120,8 +133,8 @@ where
                             stdout.write_all(s.as_bytes()).await?;
                         }
                         #[cfg(all(
-                            not(all(target_os = "wasi", target_env = "p2")),
-                            any(target_family = "wasm", target_os = "wasi")
+                            any(target_family = "wasm", target_os = "wasi"),
+                            not(all(target_os = "wasi", target_env = "p2"))
                         ))]
                         {
                             unimplemented!();
@@ -136,17 +149,19 @@ where
                             stdout.flush().await?;
                         }
                         #[cfg(all(
-                            not(all(target_os = "wasi", target_env = "p2")),
-                            any(target_family = "wasm", target_os = "wasi")
+                            any(target_family = "wasm", target_os = "wasi"),
+                            not(all(target_os = "wasi", target_env = "p2"))
                         ))]
                         {
                             unimplemented!();
                         }
                     },
+                    TerminalCommand::Exit(exit_code) => return Ok(*exit_code),
                     _ => unreachable!(),
                 }
             }
-            Ok(())
+
+            Ok(ExitCode::SUCCESS)
         })
     }
 }

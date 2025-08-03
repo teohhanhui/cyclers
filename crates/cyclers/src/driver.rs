@@ -8,8 +8,15 @@ where
 {
     type Input;
     type Source: Source;
+    type Termination;
 
-    fn call(self, sink: Sink) -> (Self::Source, impl Future<Output = Result<(), BoxError>>);
+    fn call(
+        self,
+        sink: Sink,
+    ) -> (
+        Self::Source,
+        impl Future<Output = Result<Self::Termination, BoxError>>,
+    );
 }
 
 pub trait Source {}
