@@ -1,3 +1,10 @@
+//! Run with:
+//!
+//! ```shell
+//! cargo run --bin webrtc-chat
+//! ```
+
+use std::io;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -7,12 +14,16 @@ use cyclers_terminal::{TerminalCommand, TerminalDriver, TerminalSource};
 use cyclers_webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
 use futures_concurrency::stream::{Chain as _, Merge as _, Zip as _};
 use futures_lite::{StreamExt as _, stream};
-use futures_rx::{CombineLatest2, RxExt as _};
+use futures_rx::RxExt as _;
 #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
 use tokio::main;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 
 #[main]
 async fn main() -> Result<ExitCode> {
+    init_tracing_subscriber();
+
     cyclers::run(
         |terminal_source: TerminalSource<_>, webrtc_source: WebRtcSource<_>| {
             // Configure the connection to the `matchbox_server`.
@@ -70,8 +81,10 @@ async fn main() -> Result<ExitCode> {
             let connected_peers = webrtc_source.connected_peers();
             let send = (
                 // Cache the latest list of connected peers.
-                CombineLatest2::new(connected_peers, stream::repeat(()))
-                    .map(|(connected_peers, _)| connected_peers),
+                connected_peers
+                    .map(Some)
+                    .share_behavior(None)
+                    .filter_map(|peers| (*peers).clone()),
                 message,
             )
                 .zip()
@@ -164,4 +177,26 @@ async fn main() -> Result<ExitCode> {
     )
     .await
     .map_err(anyhow::Error::from_boxed)
+}
+
+fn init_tracing_subscriber() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                #[cfg(not(debug_assertions))]
+                {
+                    "info".into()
+                }
+                #[cfg(debug_assertions)]
+                {
+                    format!(
+                        "{crate}=debug,cyclers=debug,cyclers_terminal=debug,cyclers_webrtc=debug",
+                        crate = env!("CARGO_CRATE_NAME"),
+                    )
+                    .into()
+                }
+            }),
+        )
+        .with(tracing_subscriber::fmt::layer().with_writer(io::stderr))
+        .init();
 }

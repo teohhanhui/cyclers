@@ -18,6 +18,8 @@ futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
 http = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["attributes", "log", "std"], optional = true }
+tracing-futures = { workspace = true, features = ["futures-03", "std", "std-future"], optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
@@ -34,6 +36,10 @@ tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]
 wasm-bindgen-test = { workspace = true, features = ["std"] }
+
+[features]
+default = []
+tracing = ["dep:tracing", "dep:tracing-futures"]
 
 [lints]
 workspace = true

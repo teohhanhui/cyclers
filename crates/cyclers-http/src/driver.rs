@@ -7,6 +7,10 @@ use futures_rx::{PublishSubject, RxExt as _};
 pub use http::{Request, Response};
 #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
 use http_body_util::BodyExt as _;
+#[cfg(feature = "tracing")]
+use tracing::{debug, instrument};
+#[cfg(feature = "tracing")]
+use tracing_futures::Instrument as _;
 #[cfg(all(target_os = "wasi", target_env = "p2"))]
 use wstd::http::IntoBody as _;
 
@@ -42,7 +46,20 @@ where
     ) {
         let sink = sink.share();
 
-        (HttpSource { sink: sink.clone() }, async move { Ok(()) })
+        (HttpSource { sink: sink.clone() }, self.run(sink))
+    }
+}
+
+impl HttpDriver {
+    #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self, _sink)))]
+    async fn run<Sink>(
+        self,
+        _sink: Shared<Sink, PublishSubject<Sink::Item>>,
+    ) -> Result<<Self as Driver<Sink>>::Termination, BoxError>
+    where
+        Sink: Stream<Item = HttpCommand>,
+    {
+        Ok(())
     }
 }
 
@@ -57,17 +74,21 @@ where
     Sink: Stream<Item = HttpCommand>,
 {
     /// Returns a [`Stream`] that yields responses received from the server.
+    #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
     pub fn response(&self) -> impl Stream<Item = Result<Response<Bytes>, BoxError>> + use<Sink> {
         let send_request = self
             .sink
             .clone()
             .filter(|command| matches!(**command, HttpCommand::SendRequest(..)));
 
-        stream::unfold((send_request,), move |(mut send_request,)| async move {
+        let response = stream::unfold((send_request,), move |(mut send_request,)| async move {
             #[allow(irrefutable_let_patterns)]
             let HttpCommand::SendRequest(request) = &*send_request.next().await? else {
                 unreachable!();
             };
+
+            #[cfg(feature = "tracing")]
+            debug!(?request, "sending request");
 
             let (parts, body) = request.clone().into_parts();
             let request = Request::from_parts(parts, body);
@@ -75,6 +96,9 @@ where
 
             match reqwest::Client::new().execute(request).await {
                 Ok(response) => {
+                    #[cfg(feature = "tracing")]
+                    debug!(?response, "received response");
+
                     #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
                     {
                         let response = Response::from(response);
@@ -122,7 +146,12 @@ where
                 },
                 Err(err) => Some((Err(err.into()), (send_request,))),
             }
-        })
+        });
+
+        #[cfg(feature = "tracing")]
+        let response = response.in_current_span();
+
+        response
     }
 }
 
@@ -132,23 +161,30 @@ where
     Sink: Stream<Item = HttpCommand>,
 {
     /// Returns a [`Stream`] that yields responses received from the server.
+    #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
     pub fn response(&self) -> impl Stream<Item = Result<Response<Bytes>, BoxError>> + use<Sink> {
         let send_request = self
             .sink
             .clone()
             .filter(|command| matches!(**command, HttpCommand::SendRequest(..)));
 
-        stream::unfold((send_request,), move |(mut send_request,)| async move {
+        let response = stream::unfold((send_request,), move |(mut send_request,)| async move {
             #[allow(irrefutable_let_patterns)]
             let HttpCommand::SendRequest(request) = &*send_request.next().await? else {
                 unreachable!();
             };
+
+            #[cfg(feature = "tracing")]
+            debug!(?request, "sending request");
 
             let (parts, body) = request.clone().into_parts();
             let request = Request::from_parts(parts, body.as_ref().into_body());
 
             match wstd::http::Client::new().send(request).await {
                 Ok(response) => {
+                    #[cfg(feature = "tracing")]
+                    debug!(?response, "received response");
+
                     let (parts, mut body) = response.into_parts();
                     let body = match body.bytes().await {
                         Ok(bytes) => Bytes::from(bytes),
@@ -162,6 +198,11 @@ where
                 },
                 Err(err) => Some((Err(err.into()), (send_request,))),
             }
-        })
+        });
+
+        #[cfg(feature = "tracing")]
+        let response = response.in_current_span();
+
+        response
     }
 }

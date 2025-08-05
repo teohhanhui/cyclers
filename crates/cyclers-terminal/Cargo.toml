@@ -16,6 +16,8 @@ cyclers = { version = "0.1.0", path = "../cyclers", default-features = false, fe
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
+tracing = { workspace = true, features = ["attributes", "log", "std"], optional = true }
+tracing-futures = { workspace = true, features = ["futures-03", "std", "std-future"], optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
@@ -34,6 +36,10 @@ wstd = { workspace = true, features = [] }
 
 [target.'cfg(not(any(target_family = "wasm", target_os = "wasi")))'.dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
+
+[features]
+default = []
+tracing = ["dep:tracing", "dep:tracing-futures"]
 
 [lints]
 workspace = true
