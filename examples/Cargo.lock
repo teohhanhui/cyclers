@@ -610,6 +610,8 @@ dependencies = [
  "http",
  "http-body-util",
  "reqwest",
+ "tracing",
+ "tracing-futures",
  "wstd",
 ]
 
@@ -625,6 +627,8 @@ dependencies = [
  "rustix",
  "tokio",
  "tokio-util",
+ "tracing",
+ "tracing-futures",
  "wstd",
 ]
 
@@ -637,9 +641,12 @@ dependencies = [
  "futures-concurrency",
  "futures-lite",
  "futures-rx",
+ "indexmap",
  "matchbox_socket",
  "tokio",
  "tokio-util",
+ "tracing",
+ "tracing-futures",
 ]
 
 [[package]]
@@ -824,6 +831,8 @@ dependencies = [
  "reqwest",
  "serde_json",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
  "wstd",
 ]
@@ -838,6 +847,8 @@ dependencies = [
  "futures-concurrency",
  "futures-lite",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "wstd",
 ]
 
@@ -853,6 +864,8 @@ dependencies = [
  "futures-lite",
  "futures-rx",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2946,6 +2959,7 @@ version = "0.1.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "784e0ac535deb450455cbfa28a6f0df145ea1bb7ae51b821cf5e7927fdcfbdd0"
 dependencies = [
+ "log",
  "pin-project-lite",
  "tracing-attributes",
  "tracing-core",
@@ -2970,6 +2984,18 @@ checksum = "b9d12581f227e93f094d3af2ae690a574abb8a2b9b7a96e7cfe9647b2b617678"
 dependencies = [
  "once_cell",
  "valuable",
+]
+
+[[package]]
+name = "tracing-futures"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
+dependencies = [
+ "futures",
+ "futures-task",
+ "pin-project",
+ "tracing",
 ]
 
 [[package]]

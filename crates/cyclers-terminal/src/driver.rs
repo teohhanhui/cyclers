@@ -12,14 +12,20 @@ use std::{fmt, io};
 use bytes::BytesMut;
 use cyclers::BoxError;
 use cyclers::driver::{Driver, Source};
-use futures_concurrency::stream::{Merge as _, Zip as _};
-use futures_lite::{Stream, StreamExt as _, pin, stream};
+use futures_concurrency::stream::Zip as _;
+use futures_lite::{Stream, StreamExt as _, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, RxExt as _};
 #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
 use tokio::io::{AsyncRead, AsyncWriteExt as _};
 #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
+#[cfg(all(feature = "tracing", target_os = "wasi", target_env = "p2"))]
+use tracing::trace;
+#[cfg(feature = "tracing")]
+use tracing::{debug, instrument};
+#[cfg(feature = "tracing")]
+use tracing_futures::Instrument as _;
 #[cfg(all(target_os = "wasi", target_env = "p2"))]
 use wstd::io::{AsyncRead as _, AsyncWrite as _};
 
@@ -97,15 +103,26 @@ where
         impl Future<Output = Result<Self::Termination, BoxError>>,
     ) {
         let sink = sink.share();
-        let write = sink
-            .clone()
-            .filter(|command| matches!(**command, TerminalCommand::Write(..)));
-        let flush = sink
-            .clone()
-            .filter(|command| matches!(**command, TerminalCommand::Flush));
-        let exit = sink
-            .clone()
-            .filter(|command| matches!(**command, TerminalCommand::Exit(..)));
+
+        (TerminalSource { sink: sink.clone() }, self.run(sink))
+    }
+}
+
+impl TerminalDriver {
+    #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self, sink)))]
+    async fn run<Sink>(
+        self,
+        sink: Shared<Sink, PublishSubject<Sink::Item>>,
+    ) -> Result<<Self as Driver<Sink>>::Termination, BoxError>
+    where
+        Sink: Stream<Item = TerminalCommand>,
+    {
+        let mut sink = sink.filter(|command| {
+            matches!(
+                **command,
+                TerminalCommand::Write(..) | TerminalCommand::Flush | TerminalCommand::Exit(..)
+            )
+        });
 
         let mut stdout = {
             #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
@@ -118,51 +135,57 @@ where
             }
         };
 
-        (TerminalSource { sink }, async move {
-            let s = (write, flush, exit).merge();
-            pin!(s);
+        while let Some(command) = sink.next().await {
+            match &*command {
+                TerminalCommand::Write(out) => {
+                    #[cfg(feature = "tracing")]
+                    debug!(out, "writing to stdout");
 
-            while let Some(command) = s.next().await {
-                match &*command {
-                    TerminalCommand::Write(s) => {
-                        #[cfg(any(
-                            not(any(target_family = "wasm", target_os = "wasi")),
-                            all(target_os = "wasi", target_env = "p2")
-                        ))]
-                        {
-                            stdout.write_all(s.as_bytes()).await?;
-                        }
-                        #[cfg(all(
-                            any(target_family = "wasm", target_os = "wasi"),
-                            not(all(target_os = "wasi", target_env = "p2"))
-                        ))]
-                        {
-                            unimplemented!();
-                        }
-                    },
-                    TerminalCommand::Flush => {
-                        #[cfg(any(
-                            not(any(target_family = "wasm", target_os = "wasi")),
-                            all(target_os = "wasi", target_env = "p2")
-                        ))]
-                        {
-                            stdout.flush().await?;
-                        }
-                        #[cfg(all(
-                            any(target_family = "wasm", target_os = "wasi"),
-                            not(all(target_os = "wasi", target_env = "p2"))
-                        ))]
-                        {
-                            unimplemented!();
-                        }
-                    },
-                    TerminalCommand::Exit(exit_code) => return Ok(*exit_code),
-                    _ => unreachable!(),
-                }
+                    #[cfg(any(
+                        not(any(target_family = "wasm", target_os = "wasi")),
+                        all(target_os = "wasi", target_env = "p2")
+                    ))]
+                    {
+                        stdout.write_all(out.as_bytes()).await?;
+                    }
+                    #[cfg(all(
+                        any(target_family = "wasm", target_os = "wasi"),
+                        not(all(target_os = "wasi", target_env = "p2"))
+                    ))]
+                    {
+                        unimplemented!();
+                    }
+                },
+                TerminalCommand::Flush => {
+                    #[cfg(feature = "tracing")]
+                    debug!("flushing stdout");
+
+                    #[cfg(any(
+                        not(any(target_family = "wasm", target_os = "wasi")),
+                        all(target_os = "wasi", target_env = "p2")
+                    ))]
+                    {
+                        stdout.flush().await?;
+                    }
+                    #[cfg(all(
+                        any(target_family = "wasm", target_os = "wasi"),
+                        not(all(target_os = "wasi", target_env = "p2"))
+                    ))]
+                    {
+                        unimplemented!();
+                    }
+                },
+                TerminalCommand::Exit(exit_code) => {
+                    #[cfg(feature = "tracing")]
+                    debug!(?exit_code, "exiting");
+
+                    return Ok(*exit_code);
+                },
+                _ => unreachable!(),
             }
+        }
 
-            Ok(ExitCode::SUCCESS)
-        })
+        Ok(ExitCode::SUCCESS)
     }
 }
 
@@ -173,6 +196,7 @@ impl<Sink> TerminalSource<Sink>
 where
     Sink: Stream<Item = TerminalCommand>,
 {
+    #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
     pub fn read_line(&self) -> impl Stream<Item = Result<String, TerminalReadError>> + use<Sink> {
         let read_line = self
             .sink
@@ -183,16 +207,25 @@ where
             #[cfg(all(unix, not(target_os = "macos")))]
             {
                 if std::io::stdin().is_terminal() {
+                    #[cfg(feature = "tracing")]
+                    debug!("using AsyncStdin as stdin is a terminal");
+
                     match AsyncStdin::new() {
                         Ok(stdin) => Ok(Box::new(stdin)),
                         Err(err) => Err(err),
                     }
                 } else {
+                    #[cfg(feature = "tracing")]
+                    debug!("using tokio::io::Stdin as fallback");
+
                     Ok(Box::new(tokio::io::stdin()))
                 }
             }
             #[cfg(any(not(unix), target_os = "macos"))]
             {
+                #[cfg(feature = "tracing")]
+                debug!("using tokio::io::Stdin as fallback");
+
                 Ok(Box::new(tokio::io::stdin()))
             }
         };
@@ -220,6 +253,19 @@ where
             })
             .flatten();
 
+        #[cfg(feature = "tracing")]
+        let read_line = read_line
+            .inspect(|_read_line| debug!("reading line from stdin"))
+            .in_current_span();
+        #[cfg(feature = "tracing")]
+        let line = line
+            .inspect(|line| {
+                if let Ok(line) = line {
+                    debug!(line, "read line from stdin");
+                }
+            })
+            .in_current_span();
+
         (read_line, line).zip().map(|(_read_line, line)| line)
     }
 }
@@ -229,6 +275,7 @@ impl<Sink> TerminalSource<Sink>
 where
     Sink: Stream<Item = TerminalCommand>,
 {
+    #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
     pub fn read_line(&self) -> impl Stream<Item = Result<String, TerminalReadError>> + use<Sink> {
         let read_line = self
             .sink
@@ -247,6 +294,9 @@ where
             |(mut stdin, mut buf, mut eof)| async move {
                 loop {
                     if let Some(pos) = buf.iter().position(|b| *b == b'\n') {
+                        #[cfg(feature = "tracing")]
+                        trace!(pos, "found newline");
+
                         let mut line: Vec<u8> = buf.split_to(pos.checked_add(1).unwrap()).into();
                         let _newline = line.pop().unwrap();
                         let line = String::from_utf8(line).map_err(|err| TerminalReadError {
@@ -258,18 +308,36 @@ where
                     }
 
                     if eof {
+                        #[cfg(feature = "tracing")]
+                        debug!("reached EOF before a newline is found");
+
                         return None;
                     }
 
                     let prev_len = buf.len();
-                    buf.resize(prev_len + CHUNK_SIZE, 0u8);
+                    buf.resize(
+                        prev_len
+                            .checked_add(CHUNK_SIZE)
+                            .expect("`new_len` should not overflow `usize`"),
+                        0u8,
+                    );
 
                     match stdin.read(&mut buf[prev_len..]).await {
                         Ok(bytes_read) => {
+                            #[cfg(feature = "tracing")]
+                            trace!(bytes_read, "read from stdin");
+
                             if bytes_read == 0 {
+                                #[cfg(feature = "tracing")]
+                                trace!("reached EOF");
+
                                 eof = true;
                             }
-                            buf.truncate(prev_len + bytes_read);
+                            buf.truncate(
+                                prev_len
+                                    .checked_add(bytes_read)
+                                    .expect("`len` should not overflow `usize`"),
+                            );
                             continue;
                         },
                         Err(err) => {
@@ -285,6 +353,19 @@ where
                 }
             },
         );
+
+        #[cfg(feature = "tracing")]
+        let read_line = read_line
+            .inspect(|_read_line| debug!("reading line from stdin"))
+            .in_current_span();
+        #[cfg(feature = "tracing")]
+        let line = line
+            .inspect(|line| {
+                if let Ok(line) = line {
+                    debug!(line, "read line from stdin");
+                }
+            })
+            .in_current_span();
 
         (read_line, line).zip().map(|(_read_line, line)| line)
     }

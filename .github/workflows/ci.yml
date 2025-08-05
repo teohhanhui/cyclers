@@ -28,14 +28,35 @@ jobs:
       - uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
+          targets: wasm32-unknown-unknown, wasm32-wasip2
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Check crates
         run: cargo clippy --workspace --all-targets --all-features
+      - name: Check crates (wasm32-unknown-unknown)
+        run: |
+          cargo clippy --target wasm32-unknown-unknown \
+            -p cyclers \
+            -p cyclers-http \
+            -p cyclers-webrtc \
+            --all-targets --all-features
+      - name: Check crates (wasm32-wasip2)
+        run: |
+          cargo clippy --target wasm32-wasip2 \
+            -p cyclers \
+            -p cyclers-http \
+            -p cyclers-terminal \
+            --all-targets --all-features
       - name: Check examples
         run: cargo clippy --manifest-path examples/Cargo.toml --workspace --all-targets --all-features
+      - name: Check examples (wasm32-wasip2)
+        run: |
+          cargo clippy --target wasm32-wasip2 --manifest-path examples/Cargo.toml \
+            -p example-http-wiki \
+            -p example-terminal-echo \
+            --all-targets --all-features
       - name: Uncomment all in .rustfmt.toml
         run: sed -r 's/^# *//g' -i .rustfmt.toml
       - name: rustfmt crates
@@ -109,6 +130,7 @@ jobs:
           cargo test --target wasm32-wasip2 \
             -p cyclers \
             -p cyclers-http \
+            -p cyclers-terminal \
             --all-targets --all-features
       - name: Test examples
         if: ${{ matrix.toolchain != 'nightly' }}

@@ -17,9 +17,12 @@ futures-channel = { workspace = true, features = ["std"] }
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
+indexmap = { workspace = true, features = ["std"] }
 matchbox_socket = { workspace = true, features = [] }
 tokio = { workspace = true, features = ["sync"] }
 tokio-util = { workspace = true, features = [] }
+tracing = { workspace = true, features = ["attributes", "log", "std"], optional = true }
+tracing-futures = { workspace = true, features = ["futures-03", "std", "std-future"], optional = true }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
@@ -29,6 +32,10 @@ tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]
 wasm-bindgen-test = { workspace = true, features = ["std"] }
+
+[features]
+default = []
+tracing = ["dep:tracing", "dep:tracing-futures"]
 
 [lints]
 workspace = true

@@ -1,3 +1,10 @@
+//! Run with:
+//!
+//! ```shell
+//! cargo run --bin http-wiki
+//! ```
+
+use std::io;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -10,12 +17,16 @@ use futures_lite::{StreamExt as _, stream};
 use futures_rx::RxExt as _;
 #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
 use tokio::main;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 use url::Url;
 #[cfg(all(target_os = "wasi", target_env = "p2"))]
 use wstd::main;
 
 #[main]
 async fn main() -> Result<ExitCode> {
+    init_tracing_subscriber();
+
     cyclers::run(
         |_terminal_source: TerminalSource<_>, http_source: HttpSource<_>| {
             // Set up the URL for querying the MediaWiki API.
@@ -135,4 +146,26 @@ async fn main() -> Result<ExitCode> {
     )
     .await
     .map_err(anyhow::Error::from_boxed)
+}
+
+fn init_tracing_subscriber() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                #[cfg(not(debug_assertions))]
+                {
+                    "info".into()
+                }
+                #[cfg(debug_assertions)]
+                {
+                    format!(
+                        "{crate}=debug,cyclers=debug,cyclers_http=debug,cyclers_terminal=debug",
+                        crate = env!("CARGO_CRATE_NAME"),
+                    )
+                    .into()
+                }
+            }),
+        )
+        .with(tracing_subscriber::fmt::layer().with_writer(io::stderr))
+        .init();
 }
