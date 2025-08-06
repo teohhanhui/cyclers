@@ -49,13 +49,13 @@ async fn main() -> Result<ExitCode> {
             // Prepare the HTTP request to send to the server.
             let send_request = url.map(|url| {
                 url.and_then(|url| {
-                    Ok(HttpCommand::SendRequest({
+                    Ok(HttpCommand::from(
                         Request::builder()
                             .method("GET")
                             .uri(url.as_str())
                             .body(vec![].into())
-                            .context("failed to build request")?
-                    }))
+                            .context("failed to build request")?,
+                    ))
                 })
             });
 

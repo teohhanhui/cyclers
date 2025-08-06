@@ -18,6 +18,8 @@ futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
 http = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["sync"] }
+tokio-stream = { workspace = true, features = [] }
 tracing = { workspace = true, features = ["attributes", "log", "std"], optional = true }
 tracing-futures = { workspace = true, features = ["futures-03", "std", "std-future"], optional = true }
 

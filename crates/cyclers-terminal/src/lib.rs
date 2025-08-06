@@ -1,5 +1,5 @@
 pub use self::driver::{
-    TerminalCommand, TerminalDriver, TerminalReadError, TerminalReadErrorKind, TerminalSource,
+    ReadLineError, ReadLineErrorKind, TerminalCommand, TerminalDriver, TerminalSource,
 };
 
 mod driver;

@@ -81,10 +81,7 @@ async fn main() -> Result<ExitCode> {
             let connected_peers = webrtc_source.connected_peers();
             let send = (
                 // Cache the latest list of connected peers.
-                connected_peers
-                    .map(Some)
-                    .share_behavior(None)
-                    .filter_map(|peers| (*peers).clone()),
+                connected_peers.switch_map(stream::repeat),
                 message,
             )
                 .zip()

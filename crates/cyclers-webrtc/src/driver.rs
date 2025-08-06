@@ -188,7 +188,7 @@ impl WebRtcDriver {
             Ok(())
         };
 
-        let fut = (
+        let run = (
             {
                 let channel_sender = channel_sender.clone();
                 let close_token = close_token.child_token();
@@ -262,9 +262,9 @@ impl WebRtcDriver {
             .try_join();
 
         #[cfg(feature = "tracing")]
-        let fut = fut.in_current_span();
+        let run = run.in_current_span();
 
-        fut.await.map(|_| ())
+        run.await.map(|_| ())
     }
 }
 

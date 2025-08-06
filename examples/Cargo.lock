@@ -610,6 +610,8 @@ dependencies = [
  "http",
  "http-body-util",
  "reqwest",
+ "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-futures",
  "wstd",
