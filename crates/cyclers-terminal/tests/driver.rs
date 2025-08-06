@@ -4,7 +4,7 @@ use anyhow::Result;
 use cyclers::driver::Driver as _;
 use cyclers_terminal::{TerminalCommand, TerminalDriver, TerminalSource};
 use futures_lite::stream;
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::test;
 #[cfg(all(target_os = "wasi", target_env = "p2"))]
 use wstd::test;

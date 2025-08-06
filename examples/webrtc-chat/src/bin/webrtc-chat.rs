@@ -15,7 +15,7 @@ use cyclers_webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
 use futures_concurrency::stream::{Chain as _, Merge as _, Zip as _};
 use futures_lite::{StreamExt as _, stream};
 use futures_rx::RxExt as _;
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::main;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;

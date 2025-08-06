@@ -26,14 +26,14 @@ tracing-futures = { workspace = true, features = ["futures-03", "std", "std-futu
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
 
-[target.'cfg(any(not(any(target_family = "wasm", target_os = "wasi")), all(target_family = "wasm", target_os = "unknown")))'.dependencies]
+[target.'cfg(any(not(target_family = "wasm"), all(target_family = "wasm", target_os = "unknown")))'.dependencies]
 http-body-util = { workspace = true, features = [] }
 reqwest = { workspace = true, features = [] }
 
 [target.'cfg(all(target_os = "wasi", target_env = "p2"))'.dependencies]
 wstd = { workspace = true, features = [] }
 
-[target.'cfg(not(any(target_family = "wasm", target_os = "wasi")))'.dev-dependencies]
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]

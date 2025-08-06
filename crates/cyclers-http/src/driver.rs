@@ -13,15 +13,15 @@ use futures_lite::{Stream, StreamExt as _, pin, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, RxExt as _};
 pub use http::{Request, Response};
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use http_body_util::BodyExt as _;
 #[cfg(any(
-    not(any(target_family = "wasm", target_os = "wasi")),
+    not(target_family = "wasm"),
     all(target_family = "wasm", target_os = "unknown")
 ))]
 use reqwest::Client;
 #[cfg(any(
-    not(any(target_family = "wasm", target_os = "wasi")),
+    not(target_family = "wasm"),
     all(target_family = "wasm", target_os = "unknown")
 ))]
 pub use reqwest::ClientBuilder;
@@ -49,7 +49,7 @@ type BoxRequest = Box<Request<Bytes>>;
 
 /// Type alias for a `Client` that can be cloned.
 #[cfg(any(
-    not(any(target_family = "wasm", target_os = "wasi")),
+    not(target_family = "wasm"),
     all(target_family = "wasm", target_os = "unknown")
 ))]
 type ArcClient = Client;
@@ -91,7 +91,7 @@ pub struct ConfigureClientError {
 pub enum ConfigureClientErrorKind {
     /// Failed to create `Client` from `ClientBuilder`.
     #[cfg(any(
-        not(any(target_family = "wasm", target_os = "wasi")),
+        not(target_family = "wasm"),
         all(target_family = "wasm", target_os = "unknown")
     ))]
     Builder,
@@ -160,7 +160,7 @@ impl HttpDriver {
                     debug!(?client_builder, "configuring client");
 
                     #[cfg(any(
-                        not(any(target_family = "wasm", target_os = "wasi")),
+                        not(target_family = "wasm"),
                         all(target_family = "wasm", target_os = "unknown")
                     ))]
                     {
@@ -230,7 +230,7 @@ where
 }
 
 #[cfg(any(
-    not(any(target_family = "wasm", target_os = "wasi")),
+    not(target_family = "wasm"),
     all(target_family = "wasm", target_os = "unknown")
 ))]
 impl<Sink> HttpSource<Sink>
@@ -282,7 +282,7 @@ where
                     #[cfg(feature = "tracing")]
                     debug!(?response, "received response");
 
-                    #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+                    #[cfg(not(target_family = "wasm"))]
                     {
                         let response = Response::from(response);
                         let (parts, body) = response.into_parts();
@@ -429,7 +429,7 @@ impl fmt::Display for ConfigureClientError {
     ) -> fmt::Result {
         match self.kind {
             #[cfg(any(
-                not(any(target_family = "wasm", target_os = "wasi")),
+                not(target_family = "wasm"),
                 all(target_family = "wasm", target_os = "unknown")
             ))]
             ConfigureClientErrorKind::Builder => {
@@ -444,7 +444,7 @@ impl Error for ConfigureClientError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.kind {
             #[cfg(any(
-                not(any(target_family = "wasm", target_os = "wasi")),
+                not(target_family = "wasm"),
                 all(target_family = "wasm", target_os = "unknown")
             ))]
             ConfigureClientErrorKind::Builder => {

@@ -1,9 +1,5 @@
 use std::error::Error;
-#[cfg(all(
-    unix,
-    not(any(target_family = "wasm", target_os = "wasi")),
-    not(target_os = "macos")
-))]
+#[cfg(all(unix, not(target_family = "wasm"), not(target_os = "macos")))]
 use std::io::IsTerminal as _;
 use std::process::ExitCode;
 use std::{fmt, io};
@@ -16,9 +12,9 @@ use futures_concurrency::stream::Zip as _;
 use futures_lite::{Stream, StreamExt as _, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, RxExt as _};
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::io::{AsyncRead, AsyncWriteExt as _};
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 #[cfg(all(feature = "tracing", target_os = "wasi", target_env = "p2"))]
 use tracing::trace;
@@ -29,11 +25,7 @@ use tracing_futures::Instrument as _;
 #[cfg(all(target_os = "wasi", target_env = "p2"))]
 use wstd::io::{AsyncRead as _, AsyncWrite as _};
 
-#[cfg(all(
-    unix,
-    not(any(target_family = "wasm", target_os = "wasi")),
-    not(target_os = "macos")
-))]
+#[cfg(all(unix, not(target_family = "wasm"), not(target_os = "macos")))]
 use crate::sys::unix::AsyncStdin;
 
 pub struct TerminalDriver;
@@ -78,10 +70,10 @@ pub struct ReadLineError {
 #[non_exhaustive]
 pub enum ReadLineErrorKind {
     /// Failed to open stdin.
-    #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+    #[cfg(not(target_family = "wasm"))]
     Stdin,
     /// Failed to process line.
-    #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+    #[cfg(not(target_family = "wasm"))]
     Line,
     /// Failed to read bytes.
     #[cfg(all(target_os = "wasi", target_env = "p2"))]
@@ -129,7 +121,7 @@ impl TerminalDriver {
         });
 
         let mut stdout = {
-            #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+            #[cfg(not(target_family = "wasm"))]
             {
                 tokio::io::stdout()
             }
@@ -146,18 +138,11 @@ impl TerminalDriver {
                     debug!(out, "writing to stdout");
 
                     #[cfg(any(
-                        not(any(target_family = "wasm", target_os = "wasi")),
+                        not(target_family = "wasm"),
                         all(target_os = "wasi", target_env = "p2")
                     ))]
                     {
                         stdout.write_all(out.as_bytes()).await?;
-                    }
-                    #[cfg(all(
-                        any(target_family = "wasm", target_os = "wasi"),
-                        not(all(target_os = "wasi", target_env = "p2"))
-                    ))]
-                    {
-                        unimplemented!();
                     }
                 },
                 TerminalCommand::Flush => {
@@ -165,18 +150,11 @@ impl TerminalDriver {
                     debug!("flushing stdout");
 
                     #[cfg(any(
-                        not(any(target_family = "wasm", target_os = "wasi")),
+                        not(target_family = "wasm"),
                         all(target_os = "wasi", target_env = "p2")
                     ))]
                     {
                         stdout.flush().await?;
-                    }
-                    #[cfg(all(
-                        any(target_family = "wasm", target_os = "wasi"),
-                        not(all(target_os = "wasi", target_env = "p2"))
-                    ))]
-                    {
-                        unimplemented!();
                     }
                 },
                 TerminalCommand::Exit(exit_code) => {
@@ -195,7 +173,7 @@ impl TerminalDriver {
 
 impl<Sink> Source for TerminalSource<Sink> where Sink: Stream {}
 
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 impl<Sink> TerminalSource<Sink>
 where
     Sink: Stream<Item = TerminalCommand>,
@@ -378,12 +356,12 @@ where
 impl fmt::Display for ReadLineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
-            #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+            #[cfg(not(target_family = "wasm"))]
             ReadLineErrorKind::Stdin => {
                 let err = self.inner.downcast_ref::<io::Error>().unwrap();
                 write!(f, "failed to open stdin: {err}")
             },
-            #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+            #[cfg(not(target_family = "wasm"))]
             ReadLineErrorKind::Line => {
                 let err = self.inner.downcast_ref::<LinesCodecError>().unwrap();
                 write!(f, "failed to process line: {err}")
@@ -408,12 +386,12 @@ impl fmt::Display for ReadLineError {
 impl Error for ReadLineError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.kind {
-            #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+            #[cfg(not(target_family = "wasm"))]
             ReadLineErrorKind::Stdin => {
                 let err = self.inner.downcast_ref::<io::Error>().unwrap();
                 Some(err)
             },
-            #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+            #[cfg(not(target_family = "wasm"))]
             ReadLineErrorKind::Line => {
                 let err = self.inner.downcast_ref::<LinesCodecError>().unwrap();
                 Some(err)

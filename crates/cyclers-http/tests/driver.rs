@@ -2,7 +2,7 @@ use anyhow::Result;
 use cyclers::driver::Driver as _;
 use cyclers_http::{ClientBuilder, HttpCommand, HttpDriver, HttpSource};
 use futures_lite::stream;
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::test;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen_test::wasm_bindgen_test as test;

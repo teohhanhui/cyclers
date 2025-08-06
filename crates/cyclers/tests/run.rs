@@ -4,7 +4,7 @@ use anyhow::Result;
 use cyclers::BoxError;
 use cyclers::driver::{Driver, Source};
 use futures_lite::{Stream, future, stream};
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::test;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen_test::wasm_bindgen_test as test;
