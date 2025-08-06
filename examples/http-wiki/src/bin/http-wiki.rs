@@ -15,7 +15,7 @@ use cyclers_terminal::{TerminalCommand, TerminalDriver, TerminalSource};
 use futures_concurrency::stream::{Chain as _, Zip as _};
 use futures_lite::{StreamExt as _, stream};
 use futures_rx::RxExt as _;
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::main;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -49,13 +49,13 @@ async fn main() -> Result<ExitCode> {
             // Prepare the HTTP request to send to the server.
             let send_request = url.map(|url| {
                 url.and_then(|url| {
-                    Ok(HttpCommand::SendRequest({
+                    Ok(HttpCommand::from(
                         Request::builder()
                             .method("GET")
                             .uri(url.as_str())
                             .body(vec![].into())
-                            .context("failed to build request")?
-                    }))
+                            .context("failed to build request")?,
+                    ))
                 })
             });
 

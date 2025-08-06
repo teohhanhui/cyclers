@@ -50,9 +50,9 @@ pub trait Sinks {
     ) -> impl Future<Output = Result<(), BoxError>> + MaybeSend;
 }
 
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 pub trait MaybeSend: Send {}
-#[cfg(any(target_family = "wasm", target_os = "wasi"))]
+#[cfg(target_family = "wasm")]
 pub trait MaybeSend {}
 
 macro_rules! impl_main {
@@ -496,9 +496,9 @@ impl_sinks!(
     (11, Sink12, T12, E12)
 );
 
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 impl<T: Send> MaybeSend for T {}
-#[cfg(any(target_family = "wasm", target_os = "wasi"))]
+#[cfg(target_family = "wasm")]
 impl<T> MaybeSend for T {}
 
 pub fn setup<M, Drv, Snk>(

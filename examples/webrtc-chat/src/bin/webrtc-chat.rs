@@ -15,7 +15,7 @@ use cyclers_webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};
 use futures_concurrency::stream::{Chain as _, Merge as _, Zip as _};
 use futures_lite::{StreamExt as _, stream};
 use futures_rx::RxExt as _;
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::main;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -81,10 +81,7 @@ async fn main() -> Result<ExitCode> {
             let connected_peers = webrtc_source.connected_peers();
             let send = (
                 // Cache the latest list of connected peers.
-                connected_peers
-                    .map(Some)
-                    .share_behavior(None)
-                    .filter_map(|peers| (*peers).clone()),
+                connected_peers.switch_map(stream::repeat),
                 message,
             )
                 .zip()

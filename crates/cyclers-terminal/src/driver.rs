@@ -1,9 +1,5 @@
 use std::error::Error;
-#[cfg(all(
-    unix,
-    not(any(target_family = "wasm", target_os = "wasi")),
-    not(target_os = "macos")
-))]
+#[cfg(all(unix, not(target_family = "wasm"), not(target_os = "macos")))]
 use std::io::IsTerminal as _;
 use std::process::ExitCode;
 use std::{fmt, io};
@@ -16,9 +12,9 @@ use futures_concurrency::stream::Zip as _;
 use futures_lite::{Stream, StreamExt as _, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, RxExt as _};
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio::io::{AsyncRead, AsyncWriteExt as _};
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 #[cfg(all(feature = "tracing", target_os = "wasi", target_env = "p2"))]
 use tracing::trace;
@@ -29,11 +25,7 @@ use tracing_futures::Instrument as _;
 #[cfg(all(target_os = "wasi", target_env = "p2"))]
 use wstd::io::{AsyncRead as _, AsyncWrite as _};
 
-#[cfg(all(
-    unix,
-    not(any(target_family = "wasm", target_os = "wasi")),
-    not(target_os = "macos")
-))]
+#[cfg(all(unix, not(target_family = "wasm"), not(target_os = "macos")))]
 use crate::sys::unix::AsyncStdin;
 
 pub struct TerminalDriver;
@@ -67,8 +59,8 @@ pub enum TerminalCommand {
 /// An error returned from [`TerminalSource::read_line`].
 #[derive(Debug)]
 #[non_exhaustive]
-pub struct TerminalReadError {
-    kind: TerminalReadErrorKind,
+pub struct ReadLineError {
+    kind: ReadLineErrorKind,
     inner: BoxError,
 }
 
@@ -76,14 +68,18 @@ pub struct TerminalReadError {
 /// fail.
 #[derive(Debug)]
 #[non_exhaustive]
-pub enum TerminalReadErrorKind {
+pub enum ReadLineErrorKind {
     /// Failed to open stdin.
+    #[cfg(not(target_family = "wasm"))]
     Stdin,
     /// Failed to process line.
+    #[cfg(not(target_family = "wasm"))]
     Line,
     /// Failed to read bytes.
+    #[cfg(all(target_os = "wasi", target_env = "p2"))]
     Read,
     /// Invalid UTF-8 encountered.
+    #[cfg(all(target_os = "wasi", target_env = "p2"))]
     InvalidUtf8,
 }
 
@@ -125,7 +121,7 @@ impl TerminalDriver {
         });
 
         let mut stdout = {
-            #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+            #[cfg(not(target_family = "wasm"))]
             {
                 tokio::io::stdout()
             }
@@ -142,18 +138,11 @@ impl TerminalDriver {
                     debug!(out, "writing to stdout");
 
                     #[cfg(any(
-                        not(any(target_family = "wasm", target_os = "wasi")),
+                        not(target_family = "wasm"),
                         all(target_os = "wasi", target_env = "p2")
                     ))]
                     {
                         stdout.write_all(out.as_bytes()).await?;
-                    }
-                    #[cfg(all(
-                        any(target_family = "wasm", target_os = "wasi"),
-                        not(all(target_os = "wasi", target_env = "p2"))
-                    ))]
-                    {
-                        unimplemented!();
                     }
                 },
                 TerminalCommand::Flush => {
@@ -161,18 +150,11 @@ impl TerminalDriver {
                     debug!("flushing stdout");
 
                     #[cfg(any(
-                        not(any(target_family = "wasm", target_os = "wasi")),
+                        not(target_family = "wasm"),
                         all(target_os = "wasi", target_env = "p2")
                     ))]
                     {
                         stdout.flush().await?;
-                    }
-                    #[cfg(all(
-                        any(target_family = "wasm", target_os = "wasi"),
-                        not(all(target_os = "wasi", target_env = "p2"))
-                    ))]
-                    {
-                        unimplemented!();
                     }
                 },
                 TerminalCommand::Exit(exit_code) => {
@@ -191,13 +173,13 @@ impl TerminalDriver {
 
 impl<Sink> Source for TerminalSource<Sink> where Sink: Stream {}
 
-#[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
+#[cfg(not(target_family = "wasm"))]
 impl<Sink> TerminalSource<Sink>
 where
     Sink: Stream<Item = TerminalCommand>,
 {
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
-    pub fn read_line(&self) -> impl Stream<Item = Result<String, TerminalReadError>> + use<Sink> {
+    pub fn read_line(&self) -> impl Stream<Item = Result<String, ReadLineError>> + use<Sink> {
         let read_line = self
             .sink
             .clone()
@@ -231,8 +213,8 @@ where
         };
 
         let line = async move {
-            let stdin = stdin.map_err(|err| TerminalReadError {
-                kind: TerminalReadErrorKind::Stdin,
+            let stdin = stdin.map_err(|err| ReadLineError {
+                kind: ReadLineErrorKind::Stdin,
                 inner: err.into(),
             })?;
             let stdin = Box::into_pin(stdin);
@@ -243,8 +225,8 @@ where
             .map(|line| match line {
                 Ok(line) => line
                     .map(|line| {
-                        line.map_err(|err| TerminalReadError {
-                            kind: TerminalReadErrorKind::Line,
+                        line.map_err(|err| ReadLineError {
+                            kind: ReadLineErrorKind::Line,
                             inner: err.into(),
                         })
                     })
@@ -276,7 +258,7 @@ where
     Sink: Stream<Item = TerminalCommand>,
 {
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
-    pub fn read_line(&self) -> impl Stream<Item = Result<String, TerminalReadError>> + use<Sink> {
+    pub fn read_line(&self) -> impl Stream<Item = Result<String, ReadLineError>> + use<Sink> {
         let read_line = self
             .sink
             .clone()
@@ -299,8 +281,8 @@ where
 
                         let mut line: Vec<u8> = buf.split_to(pos.checked_add(1).unwrap()).into();
                         let _newline = line.pop().unwrap();
-                        let line = String::from_utf8(line).map_err(|err| TerminalReadError {
-                            kind: TerminalReadErrorKind::InvalidUtf8,
+                        let line = String::from_utf8(line).map_err(|err| ReadLineError {
+                            kind: ReadLineErrorKind::InvalidUtf8,
                             inner: err.into(),
                         });
 
@@ -342,8 +324,8 @@ where
                         },
                         Err(err) => {
                             return Some((
-                                Err(TerminalReadError {
-                                    kind: TerminalReadErrorKind::Read,
+                                Err(ReadLineError {
+                                    kind: ReadLineErrorKind::Read,
                                     inner: err.into(),
                                 }),
                                 (stdin, buf, eof),
@@ -371,29 +353,26 @@ where
     }
 }
 
-impl fmt::Display for TerminalReadError {
+impl fmt::Display for ReadLineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
-            TerminalReadErrorKind::Stdin => {
+            #[cfg(not(target_family = "wasm"))]
+            ReadLineErrorKind::Stdin => {
                 let err = self.inner.downcast_ref::<io::Error>().unwrap();
                 write!(f, "failed to open stdin: {err}")
             },
-            TerminalReadErrorKind::Line => {
-                #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
-                {
-                    let err = self.inner.downcast_ref::<LinesCodecError>().unwrap();
-                    write!(f, "failed to process line: {err}")
-                }
-                #[cfg(any(target_family = "wasm", target_os = "wasi"))]
-                {
-                    unimplemented!();
-                }
+            #[cfg(not(target_family = "wasm"))]
+            ReadLineErrorKind::Line => {
+                let err = self.inner.downcast_ref::<LinesCodecError>().unwrap();
+                write!(f, "failed to process line: {err}")
             },
-            TerminalReadErrorKind::Read => {
+            #[cfg(all(target_os = "wasi", target_env = "p2"))]
+            ReadLineErrorKind::Read => {
                 let err = self.inner.downcast_ref::<io::Error>().unwrap();
                 write!(f, "failed to read bytes: {err}")
             },
-            TerminalReadErrorKind::InvalidUtf8 => {
+            #[cfg(all(target_os = "wasi", target_env = "p2"))]
+            ReadLineErrorKind::InvalidUtf8 => {
                 let err = self
                     .inner
                     .downcast_ref::<std::string::FromUtf8Error>()
@@ -404,29 +383,26 @@ impl fmt::Display for TerminalReadError {
     }
 }
 
-impl Error for TerminalReadError {
+impl Error for ReadLineError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self.kind {
-            TerminalReadErrorKind::Stdin => {
+            #[cfg(not(target_family = "wasm"))]
+            ReadLineErrorKind::Stdin => {
                 let err = self.inner.downcast_ref::<io::Error>().unwrap();
                 Some(err)
             },
-            TerminalReadErrorKind::Line => {
-                #[cfg(not(any(target_family = "wasm", target_os = "wasi")))]
-                {
-                    let err = self.inner.downcast_ref::<LinesCodecError>().unwrap();
-                    Some(err)
-                }
-                #[cfg(any(target_family = "wasm", target_os = "wasi"))]
-                {
-                    unimplemented!();
-                }
+            #[cfg(not(target_family = "wasm"))]
+            ReadLineErrorKind::Line => {
+                let err = self.inner.downcast_ref::<LinesCodecError>().unwrap();
+                Some(err)
             },
-            TerminalReadErrorKind::Read => {
+            #[cfg(all(target_os = "wasi", target_env = "p2"))]
+            ReadLineErrorKind::Read => {
                 let err = self.inner.downcast_ref::<io::Error>().unwrap();
                 Some(err)
             },
-            TerminalReadErrorKind::InvalidUtf8 => {
+            #[cfg(all(target_os = "wasi", target_env = "p2"))]
+            ReadLineErrorKind::InvalidUtf8 => {
                 let err = self
                     .inner
                     .downcast_ref::<std::string::FromUtf8Error>()
@@ -434,5 +410,13 @@ impl Error for TerminalReadError {
                 Some(err)
             },
         }
+    }
+}
+
+impl ReadLineError {
+    /// Returns the corresponding [`ReadLineErrorKind`] for this error.
+    #[must_use]
+    pub const fn kind(&self) -> &ReadLineErrorKind {
+        &self.kind
     }
 }
