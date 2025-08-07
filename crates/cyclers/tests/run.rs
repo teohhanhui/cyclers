@@ -28,7 +28,6 @@ async fn it_connects_main_and_drivers() -> Result<()> {
     where
         Sink: Stream<Item = MockCommand>,
     {
-        type Input = MockCommand;
         type Source = MockSource<Sink>;
         type Termination = ();
 

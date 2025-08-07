@@ -11,6 +11,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use crate::driver::{Driver, Source};
 use crate::util::{head, head_or_tail};
 
+/// Buffer capacity for the proxy channel created for each sink stream. Since
+/// the streams are strictly pull-based, there is no backpressure.
 const SINK_PROXY_BUFFER_LEN: usize = 1;
 
 /// Type alias for a type-erased error type.
@@ -19,14 +21,25 @@ pub type BoxError = Box<dyn Error + Send + Sync>;
 /// Type alias for a type-erased error type that can be cloned.
 pub type ArcError = Arc<dyn Error + Send + Sync>;
 
+/// A [pure] `main` function.
+///
+/// [pure]: https://en.wikipedia.org/wiki/Pure_function
 pub trait Main<Sources, Sinks> {
+    /// Calls the `main` function with a collection of source objects from each
+    /// driver. Returns a collection of sink streams for each driver.
     fn call(self, sources: Sources) -> Sinks;
 }
 
+/// A heterogeneous collection of driver functions.
 pub trait Drivers<Sinks> {
     type Sources: Sources;
     type Termination;
 
+    /// Calls each driver function. Returns a collection of source objects from
+    /// each driver, and an aggregate run loop future for the drivers.
+    ///
+    /// The returned aggregate run loop future must be polled for the drivers to
+    /// perform certain side effects.
     fn call(
         self,
         sinks: Sinks,
@@ -36,14 +49,25 @@ pub trait Drivers<Sinks> {
     );
 }
 
+/// A heterogeneous collection of source objects.
 pub trait Sources {}
 
+/// A heterogeneous collection of sink streams.
 pub trait Sinks {
     type SinkSenders;
     type SinkReceivers;
 
+    /// Creates a proxy channel for each sink stream. Returns the sender and
+    /// receiver pair for each proxy channel.
     fn make_sink_proxies() -> (Self::SinkSenders, Self::SinkReceivers);
 
+    /// Subscribes to each sink stream. Each item yielded by the sink stream is
+    /// passed on to the corresponding driver's sink, by sending it through the
+    /// proxy channel.
+    ///
+    /// If the receiving end of the proxy channel has been disconnected, it
+    /// means the driver has exited, so it is safe to stop proxying for that
+    /// sink stream as well.
     fn replicate_many(
         self,
         sink_senders: Self::SinkSenders,
@@ -72,102 +96,98 @@ macro_rules! impl_main {
     };
 }
 
-impl_main!((0, (Source1, Sink1)));
-impl_main!((0, (Source1, Sink1)), (1, (Source2, Sink2)));
+impl_main!((0, (Src1, Snk1)));
+impl_main!((0, (Src1, Snk1)), (1, (Src2, Snk2)));
+impl_main!((0, (Src1, Snk1)), (1, (Src2, Snk2)), (2, (Src3, Snk3)));
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4))
 );
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4)),
+    (4, (Src5, Snk5))
 );
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4)),
-    (4, (Source5, Sink5))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4)),
+    (4, (Src5, Snk5)),
+    (5, (Src6, Snk6))
 );
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4)),
-    (4, (Source5, Sink5)),
-    (5, (Source6, Sink6))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4)),
+    (4, (Src5, Snk5)),
+    (5, (Src6, Snk6)),
+    (6, (Src7, Snk7))
 );
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4)),
-    (4, (Source5, Sink5)),
-    (5, (Source6, Sink6)),
-    (6, (Source7, Sink7))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4)),
+    (4, (Src5, Snk5)),
+    (5, (Src6, Snk6)),
+    (6, (Src7, Snk7)),
+    (7, (Src8, Snk8))
 );
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4)),
-    (4, (Source5, Sink5)),
-    (5, (Source6, Sink6)),
-    (6, (Source7, Sink7)),
-    (7, (Source8, Sink8))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4)),
+    (4, (Src5, Snk5)),
+    (5, (Src6, Snk6)),
+    (6, (Src7, Snk7)),
+    (7, (Src8, Snk8)),
+    (8, (Src9, Snk9))
 );
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4)),
-    (4, (Source5, Sink5)),
-    (5, (Source6, Sink6)),
-    (6, (Source7, Sink7)),
-    (7, (Source8, Sink8)),
-    (8, (Source9, Sink9))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4)),
+    (4, (Src5, Snk5)),
+    (5, (Src6, Snk6)),
+    (6, (Src7, Snk7)),
+    (7, (Src8, Snk8)),
+    (8, (Src9, Snk9)),
+    (9, (Src10, Snk10))
 );
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4)),
-    (4, (Source5, Sink5)),
-    (5, (Source6, Sink6)),
-    (6, (Source7, Sink7)),
-    (7, (Source8, Sink8)),
-    (8, (Source9, Sink9)),
-    (9, (Source10, Sink10))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4)),
+    (4, (Src5, Snk5)),
+    (5, (Src6, Snk6)),
+    (6, (Src7, Snk7)),
+    (7, (Src8, Snk8)),
+    (8, (Src9, Snk9)),
+    (9, (Src10, Snk10)),
+    (10, (Src11, Snk11))
 );
 impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4)),
-    (4, (Source5, Sink5)),
-    (5, (Source6, Sink6)),
-    (6, (Source7, Sink7)),
-    (7, (Source8, Sink8)),
-    (8, (Source9, Sink9)),
-    (9, (Source10, Sink10)),
-    (10, (Source11, Sink11))
-);
-impl_main!(
-    (0, (Source1, Sink1)),
-    (1, (Source2, Sink2)),
-    (2, (Source3, Sink3)),
-    (3, (Source4, Sink4)),
-    (4, (Source5, Sink5)),
-    (5, (Source6, Sink6)),
-    (6, (Source7, Sink7)),
-    (7, (Source8, Sink8)),
-    (8, (Source9, Sink9)),
-    (9, (Source10, Sink10)),
-    (10, (Source11, Sink11)),
-    (11, (Source12, Sink12))
+    (0, (Src1, Snk1)),
+    (1, (Src2, Snk2)),
+    (2, (Src3, Snk3)),
+    (3, (Src4, Snk4)),
+    (4, (Src5, Snk5)),
+    (5, (Src6, Snk6)),
+    (6, (Src7, Snk7)),
+    (7, (Src8, Snk8)),
+    (8, (Src9, Snk9)),
+    (9, (Src10, Snk10)),
+    (10, (Src11, Snk11)),
+    (11, (Src12, Snk12))
 );
 
 macro_rules! impl_drivers {
@@ -313,32 +333,18 @@ macro_rules! impl_sources {
     };
 }
 
-impl_sources!(Source1);
-impl_sources!(Source1, Source2);
-impl_sources!(Source1, Source2, Source3);
-impl_sources!(Source1, Source2, Source3, Source4);
-impl_sources!(Source1, Source2, Source3, Source4, Source5);
-impl_sources!(Source1, Source2, Source3, Source4, Source5, Source6);
-impl_sources!(
-    Source1, Source2, Source3, Source4, Source5, Source6, Source7
-);
-impl_sources!(
-    Source1, Source2, Source3, Source4, Source5, Source6, Source7, Source8
-);
-impl_sources!(
-    Source1, Source2, Source3, Source4, Source5, Source6, Source7, Source8, Source9
-);
-impl_sources!(
-    Source1, Source2, Source3, Source4, Source5, Source6, Source7, Source8, Source9, Source10
-);
-impl_sources!(
-    Source1, Source2, Source3, Source4, Source5, Source6, Source7, Source8, Source9, Source10,
-    Source11
-);
-impl_sources!(
-    Source1, Source2, Source3, Source4, Source5, Source6, Source7, Source8, Source9, Source10,
-    Source11, Source12
-);
+impl_sources!(S1);
+impl_sources!(S1, S2);
+impl_sources!(S1, S2, S3);
+impl_sources!(S1, S2, S3, S4);
+impl_sources!(S1, S2, S3, S4, S5);
+impl_sources!(S1, S2, S3, S4, S5, S6);
+impl_sources!(S1, S2, S3, S4, S5, S6, S7);
+impl_sources!(S1, S2, S3, S4, S5, S6, S7, S8);
+impl_sources!(S1, S2, S3, S4, S5, S6, S7, S8, S9);
+impl_sources!(S1, S2, S3, S4, S5, S6, S7, S8, S9, S10);
+impl_sources!(S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11);
+impl_sources!(S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12);
 
 macro_rules! impl_sinks {
     (
@@ -402,98 +408,98 @@ macro_rules! impl_sinks {
     };
 }
 
-impl_sinks!((0, Sink1, T1, E1));
-impl_sinks!((0, Sink1, T1, E1), (1, Sink2, T2, E2));
-impl_sinks!((0, Sink1, T1, E1), (1, Sink2, T2, E2), (2, Sink3, T3, E3));
+impl_sinks!((0, S1, T1, E1));
+impl_sinks!((0, S1, T1, E1), (1, S2, T2, E2));
+impl_sinks!((0, S1, T1, E1), (1, S2, T2, E2), (2, S3, T3, E3));
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4)
 );
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4),
-    (4, Sink5, T5, E5)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4),
+    (4, S5, T5, E5)
 );
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4),
-    (4, Sink5, T5, E5),
-    (5, Sink6, T6, E6)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4),
+    (4, S5, T5, E5),
+    (5, S6, T6, E6)
 );
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4),
-    (4, Sink5, T5, E5),
-    (5, Sink6, T6, E6),
-    (6, Sink7, T7, E7)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4),
+    (4, S5, T5, E5),
+    (5, S6, T6, E6),
+    (6, S7, T7, E7)
 );
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4),
-    (4, Sink5, T5, E5),
-    (5, Sink6, T6, E6),
-    (6, Sink7, T7, E7),
-    (7, Sink8, T8, E8)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4),
+    (4, S5, T5, E5),
+    (5, S6, T6, E6),
+    (6, S7, T7, E7),
+    (7, S8, T8, E8)
 );
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4),
-    (4, Sink5, T5, E5),
-    (5, Sink6, T6, E6),
-    (6, Sink7, T7, E7),
-    (7, Sink8, T8, E8),
-    (8, Sink9, T9, E9)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4),
+    (4, S5, T5, E5),
+    (5, S6, T6, E6),
+    (6, S7, T7, E7),
+    (7, S8, T8, E8),
+    (8, S9, T9, E9)
 );
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4),
-    (4, Sink5, T5, E5),
-    (5, Sink6, T6, E6),
-    (6, Sink7, T7, E7),
-    (7, Sink8, T8, E8),
-    (8, Sink9, T9, E9),
-    (9, Sink10, T10, E10)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4),
+    (4, S5, T5, E5),
+    (5, S6, T6, E6),
+    (6, S7, T7, E7),
+    (7, S8, T8, E8),
+    (8, S9, T9, E9),
+    (9, S10, T10, E10)
 );
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4),
-    (4, Sink5, T5, E5),
-    (5, Sink6, T6, E6),
-    (6, Sink7, T7, E7),
-    (7, Sink8, T8, E8),
-    (8, Sink9, T9, E9),
-    (9, Sink10, T10, E10),
-    (10, Sink11, T11, E11)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4),
+    (4, S5, T5, E5),
+    (5, S6, T6, E6),
+    (6, S7, T7, E7),
+    (7, S8, T8, E8),
+    (8, S9, T9, E9),
+    (9, S10, T10, E10),
+    (10, S11, T11, E11)
 );
 impl_sinks!(
-    (0, Sink1, T1, E1),
-    (1, Sink2, T2, E2),
-    (2, Sink3, T3, E3),
-    (3, Sink4, T4, E4),
-    (4, Sink5, T5, E5),
-    (5, Sink6, T6, E6),
-    (6, Sink7, T7, E7),
-    (7, Sink8, T8, E8),
-    (8, Sink9, T9, E9),
-    (9, Sink10, T10, E10),
-    (10, Sink11, T11, E11),
-    (11, Sink12, T12, E12)
+    (0, S1, T1, E1),
+    (1, S2, T2, E2),
+    (2, S3, T3, E3),
+    (3, S4, T4, E4),
+    (4, S5, T5, E5),
+    (5, S6, T6, E6),
+    (6, S7, T7, E7),
+    (7, S8, T8, E8),
+    (8, S9, T9, E9),
+    (9, S10, T10, E10),
+    (10, S11, T11, E11),
+    (11, S12, T12, E12)
 );
 
 #[cfg(not(target_family = "wasm"))]
@@ -501,26 +507,33 @@ impl<T: Send> MaybeSend for T {}
 #[cfg(target_family = "wasm")]
 impl<T> MaybeSend for T {}
 
+/// Prepares the application to be executed.
+///
+/// Takes a `main` function and prepares to circularly connect it to the given
+/// collection of driver functions. Returns a `run` function. Only when the
+/// `run` function is called will the application actually execute.
 pub fn setup<M, Drv, Snk>(
     main: M,
     drivers: Drv,
-) -> (
-    // Drv::Sources, Snk,
-    impl AsyncFnOnce() -> Result<Drv::Termination, BoxError>,
-)
+) -> (impl AsyncFnOnce() -> Result<Drv::Termination, BoxError>,)
 where
     M: Main<Drv::Sources, Snk>,
     Drv: Drivers<Snk::SinkReceivers>,
     Snk: Sinks,
 {
-    let (sources, run) = setup_reusable(drivers);
+    let (sources, run) = setup_partial(drivers);
     let sinks = main.call(sources);
     let run = async move || run(sinks).await;
 
-    (/* sources, sinks, */ run,)
+    (run,)
 }
 
-pub fn setup_reusable<Drv, Snk>(
+/// A partially-applied variant of [`setup`] which accepts only the drivers.
+///
+/// Takes a collection of driver functions as input, and outputs a collection of
+/// the generated sources (from those drivers), and a `run` function (which in
+/// turn expects sinks as argument).
+pub fn setup_partial<Drv, Snk>(
     drivers: Drv,
 ) -> (
     Drv::Sources,
@@ -541,13 +554,19 @@ where
     })
 }
 
+/// Takes a `main` function and circularly connects it to the given collection
+/// of driver functions.
+///
+/// The `main` function expects a collection of "source" objects (returned from
+/// drivers) as input, and should return a collection of "sink" streams (to be
+/// given to drivers).
 pub async fn run<M, Drv, Snk>(main: M, drivers: Drv) -> Result<Drv::Termination, BoxError>
 where
     M: Main<Drv::Sources, Snk>,
     Drv: Drivers<Snk::SinkReceivers>,
     Snk: Sinks,
 {
-    let (/* _sources, _sinks, */ run,) = setup(main, drivers);
+    let (run,) = setup(main, drivers);
 
     run().await
 }

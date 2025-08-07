@@ -101,7 +101,6 @@ impl<Sink> Driver<Sink> for HttpDriver
 where
     Sink: Stream<Item = HttpCommand>,
 {
-    type Input = HttpCommand;
     type Source = HttpSource<Sink>;
     type Termination = ();
 

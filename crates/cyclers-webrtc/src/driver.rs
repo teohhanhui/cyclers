@@ -54,7 +54,6 @@ impl<Sink> Driver<Sink> for WebRtcDriver
 where
     Sink: Stream<Item = WebRtcCommand>,
 {
-    type Input = WebRtcCommand;
     type Source = WebRtcSource<Sink>;
     type Termination = ();
 

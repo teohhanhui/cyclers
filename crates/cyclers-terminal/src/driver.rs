@@ -87,7 +87,6 @@ impl<Sink> Driver<Sink> for TerminalDriver
 where
     Sink: Stream<Item = TerminalCommand>,
 {
-    type Input = TerminalCommand;
     type Source = TerminalSource<Sink>;
     type Termination = ExitCode;
 
