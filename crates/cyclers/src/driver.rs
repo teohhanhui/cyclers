@@ -16,7 +16,7 @@ where
     /// and a run loop future.
     ///
     /// The returned run loop future must be polled for the driver to perform
-    /// certain side effects.
+    /// unobserved side effects (i.e. not queried through the source object).
     fn call(
         self,
         sink: Sink,
