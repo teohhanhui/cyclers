@@ -11,8 +11,12 @@ use tokio_stream::wrappers::ReceiverStream;
 use crate::driver::{Driver, Source};
 use crate::util::{head, head_or_tail};
 
-/// Buffer capacity for the proxy channel created for each sink stream. Since
-/// the streams are strictly pull-based, there is no backpressure.
+/// Buffer capacity for the proxy channel created for each sink stream.
+///
+/// Since the sink stream is strictly pull-based, the buffer capacity should
+/// always be 1.
+///
+/// See <https://github.com/rust-lang/futures-rs/issues/69#issuecomment-240434585>
 const SINK_PROXY_BUFFER_LEN: usize = 1;
 
 /// Type alias for a type-erased error type.
@@ -39,7 +43,8 @@ pub trait Drivers<Sinks> {
     /// each driver, and an aggregate run loop future for the drivers.
     ///
     /// The returned aggregate run loop future must be polled for the drivers to
-    /// perform certain side effects.
+    /// perform unobserved side effects (i.e. not queried through the source
+    /// objects).
     fn call(
         self,
         sinks: Sinks,
@@ -54,12 +59,13 @@ pub trait Sources {}
 
 /// A heterogeneous collection of sink streams.
 pub trait Sinks {
-    type SinkSenders;
-    type SinkReceivers;
+    type ProxyReceivers;
+    type ProxySenders;
 
-    /// Creates a proxy channel for each sink stream. Returns the sender and
-    /// receiver pair for each proxy channel.
-    fn make_sink_proxies() -> (Self::SinkSenders, Self::SinkReceivers);
+    /// Creates a proxy channel for each sink stream. Returns a collection of
+    /// senders for each proxy channel, and a collection of receivers for each
+    /// proxy channel.
+    fn make_proxy_channels() -> (Self::ProxySenders, Self::ProxyReceivers);
 
     /// Subscribes to each sink stream. Each item yielded by the sink stream is
     /// passed on to the corresponding driver's sink, by sending it through the
@@ -68,9 +74,9 @@ pub trait Sinks {
     /// If the receiving end of the proxy channel has been disconnected, it
     /// means the driver has exited, so it is safe to stop proxying for that
     /// sink stream as well.
-    fn replicate_many(
+    fn proxy(
         self,
-        sink_senders: Self::SinkSenders,
+        proxy_senders: Self::ProxySenders,
     ) -> impl Future<Output = Result<(), BoxError>> + MaybeSend;
 }
 
@@ -211,7 +217,11 @@ macro_rules! impl_drivers {
                         let ([<source $idx>], [<fut $idx>]) = self.$idx.call(sinks.$idx);
                     )+
 
-                    (($([<source $idx>],)+), async move {
+                    let aggregate_run = async move {
+                        // Polls the run loop futures from each driver, until the first driver
+                        // exits. Yields the termination value from the first driver.
+                        //
+                        // The termination values from the other drivers are always discarded.
                         let s = head_or_tail!(
                             $(
                                 (
@@ -224,12 +234,16 @@ macro_rules! impl_drivers {
                         pin!(s);
 
                         while let Some(out) = s.try_next().await? {
+                            // If the item is `Some(_)`, it is the termination value from the first
+                            // driver.
                             if let Some(out) = out {
                                 return Ok(out);
                             }
                         }
-                        unreachable!()
-                    })
+                        unreachable!();
+                    };
+
+                    (($([<source $idx>],)+), aggregate_run)
                 }
             }
         }
@@ -357,10 +371,10 @@ macro_rules! impl_sinks {
             $($t: MaybeSend,)+
             $($e: Into<BoxError>,)+
         {
-            type SinkReceivers = ($(ReceiverStream<$t>,)+);
-            type SinkSenders = ($(mpsc::Sender<$t>,)+);
+            type ProxyReceivers = ($(ReceiverStream<$t>,)+);
+            type ProxySenders = ($(mpsc::Sender<$t>,)+);
 
-            fn make_sink_proxies() -> (Self::SinkSenders, Self::SinkReceivers) {
+            fn make_proxy_channels() -> (Self::ProxySenders, Self::ProxyReceivers) {
                 paste! {
                     $(
                         let ([<tx $idx>], [<rx $idx>]) = mpsc::channel(SINK_PROXY_BUFFER_LEN);
@@ -375,15 +389,15 @@ macro_rules! impl_sinks {
                 reason = "warning: use of `async fn` in public traits is discouraged as auto trait \
                           bounds cannot be specified"
             )]
-            fn replicate_many(
+            fn proxy(
                 self,
-                sink_senders: Self::SinkSenders,
+                proxy_senders: Self::ProxySenders,
             ) -> impl Future<Output = Result<(), BoxError>> + MaybeSend {
                 async move {
                     let s = (
                         $(
                             stream::unfold(
-                                (Box::pin(self.$idx), sink_senders.$idx),
+                                (Box::pin(self.$idx), proxy_senders.$idx),
                                 async move |(mut sink, tx)| {
                                     let x = match sink.next().await? {
                                         Ok(x) => x,
@@ -518,7 +532,7 @@ pub fn setup<M, Drv, Snk>(
 ) -> (impl AsyncFnOnce() -> Result<Drv::Termination, BoxError>,)
 where
     M: Main<Drv::Sources, Snk>,
-    Drv: Drivers<Snk::SinkReceivers>,
+    Drv: Drivers<Snk::ProxyReceivers>,
     Snk: Sinks,
 {
     let (sources, run) = setup_partial(drivers);
@@ -530,9 +544,12 @@ where
 
 /// A partially-applied variant of [`setup`] which accepts only the drivers.
 ///
-/// Takes a collection of driver functions as input, and outputs a collection of
+/// Takes a collection of driver functions as input, and returns a collection of
 /// the generated sources (from those drivers), and a `run` function (which in
 /// turn expects sinks as argument).
+///
+/// `run` is the function that once called with `sinks` as argument, will
+/// execute the application, tying together sources with sinks.
 pub fn setup_partial<Drv, Snk>(
     drivers: Drv,
 ) -> (
@@ -540,18 +557,19 @@ pub fn setup_partial<Drv, Snk>(
     impl AsyncFnOnce(Snk) -> Result<Drv::Termination, BoxError>,
 )
 where
-    Drv: Drivers<Snk::SinkReceivers>,
+    Drv: Drivers<Snk::ProxyReceivers>,
     Snk: Sinks,
 {
-    let (sink_senders, sink_proxies) = Snk::make_sink_proxies();
-    let (sources, drivers_fut) = drivers.call(sink_proxies);
+    let (proxy_senders, proxy_receivers) = Snk::make_proxy_channels();
+    let (sources, drivers_fut) = drivers.call(proxy_receivers);
 
-    (sources, async |sinks: Snk| {
-        let (_, out) = (sinks.replicate_many(sink_senders), drivers_fut)
-            .try_join()
-            .await?;
+    let run = async |sinks: Snk| {
+        let (_, out) = (sinks.proxy(proxy_senders), drivers_fut).try_join().await?;
+
         Ok(out)
-    })
+    };
+
+    (sources, run)
 }
 
 /// Takes a `main` function and circularly connects it to the given collection
@@ -563,7 +581,7 @@ where
 pub async fn run<M, Drv, Snk>(main: M, drivers: Drv) -> Result<Drv::Termination, BoxError>
 where
     M: Main<Drv::Sources, Snk>,
-    Drv: Drivers<Snk::SinkReceivers>,
+    Drv: Drivers<Snk::ProxyReceivers>,
     Snk: Sinks,
 {
     let (run,) = setup(main, drivers);

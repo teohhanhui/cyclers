@@ -163,7 +163,7 @@ async fn main() -> Result<ExitCode> {
                         .flat_map(|(feedback, read)| (feedback, read.map(Ok)).chain()),
                 )
                     .chain(),
-                // Print out any messages immediately as they are received from peers.
+                // Print out any messages from peers, as soon as they are received.
                 print_received,
             )
                 .merge();
