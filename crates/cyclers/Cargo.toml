@@ -14,7 +14,6 @@ categories = { workspace = true }
 [dependencies]
 futures-concurrency = { workspace = true, features = ["std"] }
 futures-lite = { workspace = true, features = ["std"] }
-futures-rx = { workspace = true, features = [] }
 paste = { workspace = true, features = [] }
 tokio = { workspace = true, features = ["sync"] }
 tokio-stream = { workspace = true, features = [] }

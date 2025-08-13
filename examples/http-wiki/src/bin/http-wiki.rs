@@ -60,7 +60,7 @@ async fn main() -> Result<ExitCode> {
             });
 
             // Receive the HTTP response from the server.
-            let response = http_source.response().map(|res| {
+            let response = http_source.responses().map(|res| {
                 res.map_err(anyhow::Error::from_boxed)
                     .context("failed to process response")
             });

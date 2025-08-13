@@ -238,28 +238,32 @@ where
 {
     /// Returns a [`Stream`] that yields responses received from the server.
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
-    pub fn response(&self) -> impl Stream<Item = Result<Response<Bytes>, BoxError>> + use<Sink> {
-        let client = self.client.clone().or(stream::once_future({
-            let client_tx = self.client_tx.clone();
-            async move {
-                let client = Client::new();
-
-                #[cfg(feature = "tracing")]
-                debug!(?client, "using default client");
-
-                if let Ok(permit) = client_tx.reserve().await {
-                    permit.send(client.clone());
-                }
-
-                client
-            }
-        })
-        .share());
-
+    pub fn responses(&self) -> impl Stream<Item = Result<Response<Bytes>, BoxError>> + use<Sink> {
         let send_request = self
             .sink
             .clone()
             .filter(|command| matches!(**command, HttpCommand::SendRequest(..)));
+
+        let default_client = send_request.clone().take(1).then({
+            let client_tx = self.client_tx.clone();
+            move |_| {
+                let client_tx = client_tx.clone();
+                async move {
+                    let client = Client::new();
+
+                    #[cfg(feature = "tracing")]
+                    debug!(?client, "using default client");
+
+                    if let Ok(permit) = client_tx.reserve().await {
+                        permit.send(client.clone());
+                    }
+
+                    client
+                }
+            }
+        });
+
+        let client = self.client.clone().or(default_client.share());
 
         let response = stream::unfold((client, send_request).zip(), move |mut s| async move {
             let (client, send_request) = s.next().await?;
@@ -344,28 +348,32 @@ where
 {
     /// Returns a [`Stream`] that yields responses received from the server.
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
-    pub fn response(&self) -> impl Stream<Item = Result<Response<Bytes>, BoxError>> + use<Sink> {
-        let client = self.client.clone().or(stream::once_future({
-            let client_tx = self.client_tx.clone();
-            async move {
-                let client = Arc::new(Client::new());
-
-                #[cfg(feature = "tracing")]
-                debug!(?client, "using default client");
-
-                if let Ok(permit) = client_tx.reserve().await {
-                    permit.send(Arc::clone(&client));
-                }
-
-                client
-            }
-        })
-        .share());
-
+    pub fn responses(&self) -> impl Stream<Item = Result<Response<Bytes>, BoxError>> + use<Sink> {
         let send_request = self
             .sink
             .clone()
             .filter(|command| matches!(**command, HttpCommand::SendRequest(..)));
+
+        let default_client = send_request.clone().take(1).then({
+            let client_tx = self.client_tx.clone();
+            move |_| {
+                let client_tx = client_tx.clone();
+                async move {
+                    let client = Arc::new(Client::new());
+
+                    #[cfg(feature = "tracing")]
+                    debug!(?client, "using default client");
+
+                    if let Ok(permit) = client_tx.reserve().await {
+                        permit.send(Arc::clone(&client));
+                    }
+
+                    client
+                }
+            }
+        });
+
+        let client = self.client.clone().or(default_client.share());
 
         let response = stream::unfold((client, send_request).zip(), move |mut s| async move {
             let (client, send_request) = s.next().await?;

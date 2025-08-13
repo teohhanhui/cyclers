@@ -25,7 +25,7 @@ async fn main() -> Result<ExitCode> {
     cyclers::run(
         |terminal_source: TerminalSource<_>| {
             // Each time we receive a line read from the terminal, we print it back out.
-            let echo = terminal_source.read_line().map(|input| {
+            let echo = terminal_source.lines().map(|input| {
                 let input = input.context("failed to read line from terminal")?;
                 Ok::<_, anyhow::Error>(TerminalCommand::Write(format!("{input}\n")))
             });

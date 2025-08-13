@@ -8,7 +8,6 @@ use std::{fmt, io};
 use bytes::BytesMut;
 use cyclers::BoxError;
 use cyclers::driver::{Driver, Source};
-use futures_concurrency::stream::Zip as _;
 use futures_lite::{Stream, StreamExt as _, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{PublishSubject, RxExt as _};
@@ -56,7 +55,7 @@ pub enum TerminalCommand {
     Exit(ExitCode),
 }
 
-/// An error returned from [`TerminalSource::read_line`].
+/// An error which can be returned when reading a line from stdin.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct ReadLineError {
@@ -64,7 +63,7 @@ pub struct ReadLineError {
     inner: BoxError,
 }
 
-/// The various types of errors that can cause [`TerminalSource::read_line`] to
+/// The various types of errors that can cause reading a line from stdin to
 /// fail.
 #[derive(Debug)]
 #[non_exhaustive]
@@ -175,14 +174,20 @@ impl<Sink> Source for TerminalSource<Sink> where Sink: Stream {}
 #[cfg(not(target_family = "wasm"))]
 impl<Sink> TerminalSource<Sink>
 where
-    Sink: Stream<Item = TerminalCommand>,
+    Sink: Stream<Item = TerminalCommand> + Send + 'static,
 {
+    /// Returns a [`Stream`] that yields lines of input read from stdin.
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
-    pub fn read_line(&self) -> impl Stream<Item = Result<String, ReadLineError>> + use<Sink> {
+    pub fn lines(&self) -> impl Stream<Item = Result<String, ReadLineError>> + use<Sink> {
         let read_line = self
             .sink
             .clone()
             .filter(|command| matches!(**command, TerminalCommand::ReadLine));
+
+        #[cfg(feature = "tracing")]
+        let read_line = read_line
+            .inspect(|_read_line| debug!("reading line from stdin"))
+            .in_current_span();
 
         let stdin: io::Result<Box<dyn AsyncRead + Send>> = {
             #[cfg(all(unix, not(target_os = "macos")))]
@@ -235,10 +240,6 @@ where
             .flatten();
 
         #[cfg(feature = "tracing")]
-        let read_line = read_line
-            .inspect(|_read_line| debug!("reading line from stdin"))
-            .in_current_span();
-        #[cfg(feature = "tracing")]
         let line = line
             .inspect(|line| {
                 if let Ok(line) = line {
@@ -247,7 +248,16 @@ where
             })
             .in_current_span();
 
-        (read_line, line).zip().map(|(_read_line, line)| line)
+        stream::unfold(
+            (read_line, line.boxed()),
+            move |(mut read_line, mut line)| async move {
+                let TerminalCommand::ReadLine = &*read_line.next().await? else {
+                    unreachable!();
+                };
+
+                Some((line.next().await?, (read_line, line)))
+            },
+        )
     }
 }
 
@@ -256,12 +266,18 @@ impl<Sink> TerminalSource<Sink>
 where
     Sink: Stream<Item = TerminalCommand>,
 {
+    /// Returns a [`Stream`] that yields lines of input read from stdin.
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
-    pub fn read_line(&self) -> impl Stream<Item = Result<String, ReadLineError>> + use<Sink> {
+    pub fn lines(&self) -> impl Stream<Item = Result<String, ReadLineError>> + use<Sink> {
         let read_line = self
             .sink
             .clone()
             .filter(|command| matches!(**command, TerminalCommand::ReadLine));
+
+        #[cfg(feature = "tracing")]
+        let read_line = read_line
+            .inspect(|_read_line| debug!("reading line from stdin"))
+            .in_current_span();
 
         let stdin = wstd::io::stdin();
 
@@ -336,10 +352,6 @@ where
         );
 
         #[cfg(feature = "tracing")]
-        let read_line = read_line
-            .inspect(|_read_line| debug!("reading line from stdin"))
-            .in_current_span();
-        #[cfg(feature = "tracing")]
         let line = line
             .inspect(|line| {
                 if let Ok(line) = line {
@@ -348,7 +360,16 @@ where
             })
             .in_current_span();
 
-        (read_line, line).zip().map(|(_read_line, line)| line)
+        stream::unfold(
+            (read_line, line.boxed_local()),
+            move |(mut read_line, mut line)| async move {
+                let TerminalCommand::ReadLine = &*read_line.next().await? else {
+                    unreachable!();
+                };
+
+                Some((line.next().await?, (read_line, line)))
+            },
+        )
     }
 }
 
