@@ -336,12 +336,11 @@ where
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
     pub fn connected_peers(&self) -> impl Stream<Item = Vec<PeerId>> + use<Sink> {
         let peer_changes = self.peer_changes();
-        let peer_changes = Box::pin(peer_changes);
 
         let peers = IndexMap::<PeerId, PeerState>::default();
 
         let connected_peers = stream::unfold(
-            (peers, peer_changes),
+            (peers, Box::pin(peer_changes)),
             move |(mut peers, mut peer_changes)| async move {
                 #[cfg(feature = "tracing")]
                 debug!("waiting for change in connected peers");

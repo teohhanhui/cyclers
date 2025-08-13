@@ -38,7 +38,7 @@ async fn main() -> Result<ExitCode> {
 
             // Receive lines of input text that have been read from the terminal.
             let input = terminal_source
-                .read_line()
+                .lines()
                 .map(|input| {
                     input
                         .context("failed to read line from terminal")

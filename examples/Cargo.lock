@@ -592,7 +592,6 @@ version = "0.1.0"
 dependencies = [
  "futures-concurrency",
  "futures-lite",
- "futures-rx",
  "paste",
  "tokio",
  "tokio-stream",

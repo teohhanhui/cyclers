@@ -577,7 +577,6 @@ dependencies = [
  "anyhow",
  "futures-concurrency",
  "futures-lite",
- "futures-rx",
  "paste",
  "tokio",
  "tokio-stream",
