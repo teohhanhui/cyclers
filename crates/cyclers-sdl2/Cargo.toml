@@ -1,0 +1,47 @@
+[package]
+name = "cyclers-sdl2"
+version = "0.1.0"
+authors = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+description = "A cyclers driver for SDL2"
+readme = "README.md"
+repository = { workspace = true }
+license = { workspace = true }
+keywords = ["cyclers", "sdl2"]
+categories = ["asynchronous", "multimedia", "rendering"]
+
+[dependencies]
+cyclers = { version = "0.1.0", path = "../cyclers", default-features = false, features = [] }
+futures-concurrency = { workspace = true, features = ["std"] }
+futures-lite = { workspace = true, features = ["std"] }
+futures-rx = { workspace = true, features = [] }
+sdl2 = { workspace = true, features = ["gfx"] }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true, features = ["attributes", "log", "std"], optional = true }
+tracing-futures = { workspace = true, features = ["futures-03", "std", "std-future"], optional = true }
+
+[dev-dependencies]
+anyhow = { workspace = true, features = ["std"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { workspace = true, features = ["time"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[features]
+default = []
+tracing = ["dep:tracing", "dep:tracing-futures"]
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "i686-unknown-linux-gnu",
+    "i686-pc-windows-msvc",
+]
