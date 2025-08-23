@@ -7,11 +7,17 @@ use std::sync::Arc;
 use bytes::Bytes;
 use cyclers::BoxError;
 use cyclers::driver::{Driver, Source};
+#[cfg(any(
+    not(target_family = "wasm"),
+    all(target_family = "wasm", target_os = "unknown")
+))]
+use cyclers::run::MaybeSend;
+use futures_concurrency::concurrent_stream::ConcurrentStream as _;
 use futures_concurrency::future::TryJoin as _;
-use futures_concurrency::stream::Zip as _;
-use futures_lite::{Stream, StreamExt as _, pin, stream};
+use futures_concurrency::stream::{Merge as _, StreamExt as _, Zip as _};
+use futures_lite::{FutureExt as _, Stream, StreamExt as _, pin, stream};
 use futures_rx::stream_ext::share::Shared;
-use futures_rx::{PublishSubject, RxExt as _};
+use futures_rx::{Event, PublishSubject, RxExt as _};
 pub use http::{Request, Response};
 #[cfg(not(target_family = "wasm"))]
 use http_body_util::BodyExt as _;
@@ -40,6 +46,7 @@ use wstd::http::IntoBody as _;
 pub use crate::wasi::ClientBuilder;
 
 const CLIENT_BUFFER_LEN: usize = 1;
+const RESPONSE_BUFFER_LEN: usize = 1;
 
 /// Type alias for a `ClientBuilder` that can be cloned.
 type ArcClientBuilder = Arc<std::sync::Mutex<Option<ClientBuilder>>>;
@@ -65,7 +72,10 @@ where
 {
     sink: Shared<Sink, PublishSubject<Sink::Item>>,
     client_tx: mpsc::Sender<ArcClient>,
+    #[cfg(not(target_family = "wasm"))]
     client: Shared<stream::Boxed<ArcClient>, PublishSubject<ArcClient>>,
+    #[cfg(target_family = "wasm")]
+    client: Shared<stream::BoxedLocal<ArcClient>, PublishSubject<ArcClient>>,
 }
 
 #[derive(Clone, Debug)]
@@ -220,10 +230,18 @@ where
         Self {
             sink,
             client_tx,
-            client: ReceiverStream::new(client_rx)
-                .flat_map(stream::repeat)
-                .boxed()
-                .share(),
+            client: {
+                let s = ReceiverStream::new(client_rx).flat_map(stream::repeat);
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    s.boxed()
+                }
+                #[cfg(target_family = "wasm")]
+                {
+                    s.boxed_local()
+                }
+            }
+            .share(),
         }
     }
 }
@@ -234,7 +252,7 @@ where
 ))]
 impl<Sink> HttpSource<Sink>
 where
-    Sink: Stream<Item = HttpCommand>,
+    Sink: Stream<Item = HttpCommand> + MaybeSend + 'static,
 {
     /// Returns a [`Stream`] that yields responses received from the server.
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
@@ -265,86 +283,142 @@ where
 
         let client = self.client.clone().or(default_client.share());
 
-        let response = stream::unfold((client, send_request).zip(), move |mut s| async move {
-            let (client, send_request) = s.next().await?;
+        let (response_tx, response_rx) = mpsc::channel(RESPONSE_BUFFER_LEN);
+        let responses = ReceiverStream::new(response_rx);
 
-            #[allow(irrefutable_let_patterns)]
-            let HttpCommand::SendRequest(request) = &*send_request else {
-                unreachable!();
-            };
-
-            #[cfg(feature = "tracing")]
-            debug!(?request, "sending request");
-
-            let (parts, body) = request.clone().into_parts();
-            let request = Request::from_parts(parts, body);
-            let request = reqwest::Request::try_from(request).expect("`request` should be valid");
-
-            match client.execute(request).await {
-                Ok(response) => {
-                    #[cfg(feature = "tracing")]
-                    debug!(?response, "received response");
-
-                    #[cfg(not(target_family = "wasm"))]
-                    {
-                        let response = Response::from(response);
-                        let (parts, body) = response.into_parts();
-                        let body = match body.collect().await {
-                            Ok(bytes) => bytes.to_bytes(),
-                            Err(err) => {
-                                return Some((Err(err.into()), s));
-                            },
+        let request_response_loop_fut = (client, send_request)
+            .zip()
+            .co()
+            .map(Box::new(
+                move |(client, send_request): (Event<ArcClient>, Event<HttpCommand>)| {
+                    let fut = async move {
+                        #[allow(irrefutable_let_patterns)]
+                        let HttpCommand::SendRequest(request) = &*send_request else {
+                            unreachable!();
                         };
-                        let response = Response::from_parts(parts, body);
 
-                        Some((Ok(response), s))
-                    }
-                    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-                    {
-                        let mut res = Response::builder()
+                        #[cfg(feature = "tracing")]
+                        debug!(?request, "sending request");
+
+                        let (parts, body) = request.clone().into_parts();
+                        let request = Request::from_parts(parts, body);
+                        let request =
+                            reqwest::Request::try_from(request).expect("`request` should be valid");
+
+                        match client.execute(request).await {
+                            Ok(response) => {
+                                #[cfg(feature = "tracing")]
+                                debug!(?response, "received response");
+
+                                #[cfg(not(target_family = "wasm"))]
+                                {
+                                    let response = Response::from(response);
+                                    let (parts, body) = response.into_parts();
+                                    let body = match body.collect().await {
+                                        Ok(bytes) => bytes.to_bytes(),
+                                        Err(err) => {
+                                            return Err(err.into());
+                                        },
+                                    };
+                                    let response = Response::from_parts(parts, body);
+
+                                    Ok(response)
+                                }
+                                #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+                                {
+                                    let mut res = Response::builder()
                             .status(response.status().as_str())
                             // .version(unimplemented!())
                         ;
-                        {
-                            let headers = res.headers_mut().unwrap();
-                            headers.extend(
-                                response
-                                    .headers()
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone())),
-                            );
-                        }
-                        let bytes = match response.bytes().await {
-                            Ok(bytes) => bytes,
-                            Err(err) => {
-                                return Some((Err(err.into()), s));
-                            },
-                        };
-                        let response = match res.body(bytes) {
-                            Ok(response) => response,
-                            Err(err) => {
-                                return Some((Err(err.into()), s));
-                            },
-                        };
+                                    {
+                                        let headers = res.headers_mut().unwrap();
+                                        headers.extend(
+                                            response
+                                                .headers()
+                                                .iter()
+                                                .map(|(k, v)| (k.clone(), v.clone())),
+                                        );
+                                    }
+                                    let bytes = match response.bytes().await {
+                                        Ok(bytes) => bytes,
+                                        Err(err) => {
+                                            return Err(err.into());
+                                        },
+                                    };
+                                    let response = match res.body(bytes) {
+                                        Ok(response) => response,
+                                        Err(err) => {
+                                            return Err(err.into());
+                                        },
+                                    };
 
-                        Some((Ok(response), s))
+                                    Ok(response)
+                                }
+                            },
+                            Err(err) => Err(err.into()),
+                        }
+                    };
+                    #[cfg(not(target_family = "wasm"))]
+                    {
+                        fut.boxed()
+                    }
+                    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+                    {
+                        fut.boxed_local()
                     }
                 },
-                Err(err) => Some((Err(err.into()), s)),
+            ))
+            .for_each(Box::new({
+                let response_tx = response_tx.clone();
+                move |response| {
+                    let response_tx = response_tx.clone();
+                    let fut = async move {
+                        if let Ok(permit) = response_tx.reserve().await {
+                            permit.send(response);
+                        }
+                    };
+                    #[cfg(not(target_family = "wasm"))]
+                    {
+                        fut.boxed()
+                    }
+                    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+                    {
+                        fut.boxed_local()
+                    }
+                }
+            }));
+        let request_response_loop_fut = {
+            #[cfg(not(target_family = "wasm"))]
+            {
+                request_response_loop_fut.boxed()
             }
-        });
+            #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+            {
+                request_response_loop_fut.boxed_local()
+            }
+        };
+
+        let responses = (
+            stream::once_future(async move {
+                request_response_loop_fut.await;
+                None
+            }),
+            responses.map(Some),
+        )
+            .merge()
+            .filter_map(|response| response);
 
         #[cfg(feature = "tracing")]
-        let response = response.in_current_span();
+        let responses = responses.in_current_span();
 
-        response
+        responses
     }
 }
 
 #[cfg(all(target_os = "wasi", target_env = "p2"))]
 impl<Sink> HttpSource<Sink>
 where
-    Sink: Stream<Item = HttpCommand>,
+    Sink: Stream<Item = HttpCommand> + 'static,
 {
     /// Returns a [`Stream`] that yields responses received from the server.
     #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
@@ -375,44 +449,76 @@ where
 
         let client = self.client.clone().or(default_client.share());
 
-        let response = stream::unfold((client, send_request).zip(), move |mut s| async move {
-            let (client, send_request) = s.next().await?;
+        let (response_tx, response_rx) = mpsc::channel(RESPONSE_BUFFER_LEN);
+        let responses = ReceiverStream::new(response_rx);
 
-            #[allow(irrefutable_let_patterns)]
-            let HttpCommand::SendRequest(request) = &*send_request else {
-                unreachable!();
-            };
+        let request_response_loop_fut = (client, send_request)
+            .zip()
+            .co()
+            .map(Box::new(
+                move |(client, send_request): (Event<ArcClient>, Event<HttpCommand>)| {
+                    async move {
+                        #[allow(irrefutable_let_patterns)]
+                        let HttpCommand::SendRequest(request) = &*send_request else {
+                            unreachable!();
+                        };
 
-            #[cfg(feature = "tracing")]
-            debug!(?request, "sending request");
+                        #[cfg(feature = "tracing")]
+                        debug!(?request, "sending request");
 
-            let (parts, body) = request.clone().into_parts();
-            let request = Request::from_parts(parts, body.as_ref().into_body());
+                        let (parts, body) = request.clone().into_parts();
+                        let request = Request::from_parts(parts, body.as_ref().into_body());
 
-            match client.send(request).await {
-                Ok(response) => {
-                    #[cfg(feature = "tracing")]
-                    debug!(?response, "received response");
+                        match client.send(request).await {
+                            Ok(response) => {
+                                #[cfg(feature = "tracing")]
+                                debug!(?response, "received response");
 
-                    let (parts, mut body) = response.into_parts();
-                    let body = match body.bytes().await {
-                        Ok(bytes) => Bytes::from(bytes),
-                        Err(err) => {
-                            return Some((Err(err.into()), s));
-                        },
-                    };
-                    let response = Response::from_parts(parts, body);
+                                let (parts, mut body) = response.into_parts();
+                                let body = match body.bytes().await {
+                                    Ok(bytes) => Bytes::from(bytes),
+                                    Err(err) => {
+                                        return Err(err.into());
+                                    },
+                                };
+                                let response = Response::from_parts(parts, body);
 
-                    Some((Ok(response), s))
+                                Ok(response)
+                            },
+                            Err(err) => Err(err.into()),
+                        }
+                    }
+                    .boxed_local()
                 },
-                Err(err) => Some((Err(err.into()), s)),
-            }
-        });
+            ))
+            .for_each(Box::new({
+                let response_tx = response_tx.clone();
+                move |response| {
+                    let response_tx = response_tx.clone();
+                    async move {
+                        if let Ok(permit) = response_tx.reserve().await {
+                            permit.send(response);
+                        }
+                    }
+                    .boxed_local()
+                }
+            }))
+            .boxed_local();
+
+        let responses = (
+            stream::once_future(async move {
+                request_response_loop_fut.await;
+                None
+            }),
+            responses.map(Some),
+        )
+            .merge()
+            .filter_map(|response| response);
 
         #[cfg(feature = "tracing")]
-        let response = response.in_current_span();
+        let responses = responses.in_current_span();
 
-        response
+        responses
     }
 }
 

@@ -32,7 +32,7 @@ tokio-util = { version = "0.7.15", default-features = false }
 tracing = { version = "0.1.41", default-features = false }
 tracing-futures = { version = "0.2.5", default-features = false }
 wasm-bindgen-test = { version = "0.3.50", default-features = false }
-wstd = { version = "0.5.3", default-features = false }
+wstd = { version = "0.5.4", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -43,5 +43,3 @@ unused_trait_names = "warn"
 
 [patch.crates-io]
 futures-rx = { git = "https://github.com/teohhanhui/rxrs", branch = "feat/shared-arc-mutex" }
-wstd = { git = "https://github.com/teohhanhui/wstd", branch = "allow_independent_futures" }
-wstd-macro = { git = "https://github.com/teohhanhui/wstd", branch = "allow_independent_futures" }

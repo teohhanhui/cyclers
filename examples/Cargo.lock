@@ -829,6 +829,7 @@ dependencies = [
  "futures-concurrency",
  "futures-lite",
  "futures-rx",
+ "http",
  "reqwest",
  "serde_json",
  "tokio",
@@ -3832,8 +3833,9 @@ dependencies = [
 
 [[package]]
 name = "wstd"
-version = "0.5.3"
-source = "git+https://github.com/teohhanhui/wstd?branch=allow_independent_futures#cc6d66eab9d9d7a96d23583f5981f4da437ff5ce"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5f51495e1ae93476d1629b5810bd6068fdf22545a8ada7ea5929e2faed7b793"
 dependencies = [
  "futures-core",
  "http",
@@ -3846,8 +3848,9 @@ dependencies = [
 
 [[package]]
 name = "wstd-macro"
-version = "0.5.3"
-source = "git+https://github.com/teohhanhui/wstd?branch=allow_independent_futures#cc6d66eab9d9d7a96d23583f5981f4da437ff5ce"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "225ac858e4405bdf164d92d070422c0b3b9b81f9b0b68836841f4d1bafc446b3"
 dependencies = [
  "quote",
  "syn",
