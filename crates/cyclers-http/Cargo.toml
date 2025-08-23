@@ -25,6 +25,7 @@ tracing-futures = { workspace = true, features = ["futures-03", "std", "std-futu
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
+httpmock = { workspace = true, features = ["cookies"] }
 
 [target.'cfg(any(not(target_family = "wasm"), all(target_family = "wasm", target_os = "unknown")))'.dependencies]
 http-body-util = { workspace = true, features = [] }
