@@ -34,6 +34,7 @@ reqwest = { workspace = true, features = [] }
 wstd = { workspace = true, features = [] }
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+httpmock = { workspace = true, features = ["cookies"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]
