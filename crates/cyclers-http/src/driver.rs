@@ -7,14 +7,10 @@ use std::sync::Arc;
 use bytes::Bytes;
 use cyclers::BoxError;
 use cyclers::driver::{Driver, Source};
-#[cfg(any(
-    not(target_family = "wasm"),
-    all(target_family = "wasm", target_os = "unknown")
-))]
 use cyclers::run::MaybeSend;
 use futures_concurrency::concurrent_stream::ConcurrentStream as _;
 use futures_concurrency::future::TryJoin as _;
-use futures_concurrency::stream::{Merge as _, StreamExt as _, Zip as _};
+use futures_concurrency::stream::{StreamExt as _, Zip as _};
 use futures_lite::{FutureExt as _, Stream, StreamExt as _, pin, stream};
 use futures_rx::stream_ext::share::Shared;
 use futures_rx::{Event, PublishSubject, RxExt as _};
@@ -246,10 +242,6 @@ where
     }
 }
 
-#[cfg(any(
-    not(target_family = "wasm"),
-    all(target_family = "wasm", target_os = "unknown")
-))]
 impl<Sink> HttpSource<Sink>
 where
     Sink: Stream<Item = HttpCommand> + MaybeSend + 'static,
@@ -268,12 +260,26 @@ where
                 let client_tx = client_tx.clone();
                 async move {
                     let client = Client::new();
+                    #[cfg(all(target_os = "wasi", target_env = "p2"))]
+                    let client = Arc::new(client);
 
                     #[cfg(feature = "tracing")]
                     debug!(?client, "using default client");
 
                     if let Ok(permit) = client_tx.reserve().await {
-                        permit.send(client.clone());
+                        permit.send({
+                            #[cfg(any(
+                                not(target_family = "wasm"),
+                                all(target_family = "wasm", target_os = "unknown")
+                            ))]
+                            {
+                                client.clone()
+                            }
+                            #[cfg(all(target_os = "wasi", target_env = "p2"))]
+                            {
+                                Arc::clone(&client)
+                            }
+                        });
                     }
 
                     client
@@ -301,10 +307,26 @@ where
                         debug!(?request, "sending request");
 
                         let (parts, body) = request.clone().into_parts();
-                        let request = Request::from_parts(parts, body);
-                        let request =
-                            reqwest::Request::try_from(request).expect("`request` should be valid");
+                        let request = {
+                            #[cfg(any(
+                                not(target_family = "wasm"),
+                                all(target_family = "wasm", target_os = "unknown")
+                            ))]
+                            {
+                                let request = Request::from_parts(parts, body);
+                                reqwest::Request::try_from(request)
+                                    .expect("`request` should be valid")
+                            }
+                            #[cfg(all(target_os = "wasi", target_env = "p2"))]
+                            {
+                                Request::from_parts(parts, body.as_ref().into_body())
+                            }
+                        };
 
+                        #[cfg(any(
+                            not(target_family = "wasm"),
+                            all(target_family = "wasm", target_os = "unknown")
+                        ))]
                         match client.execute(request).await {
                             Ok(response) => {
                                 #[cfg(feature = "tracing")]
@@ -357,118 +379,7 @@ where
                             },
                             Err(err) => Err(err.into()),
                         }
-                    };
-                    #[cfg(not(target_family = "wasm"))]
-                    {
-                        fut.boxed()
-                    }
-                    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-                    {
-                        fut.boxed_local()
-                    }
-                },
-            ))
-            .for_each(Box::new({
-                let response_tx = response_tx.clone();
-                move |response| {
-                    let response_tx = response_tx.clone();
-                    let fut = async move {
-                        if let Ok(permit) = response_tx.reserve().await {
-                            permit.send(response);
-                        }
-                    };
-                    #[cfg(not(target_family = "wasm"))]
-                    {
-                        fut.boxed()
-                    }
-                    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-                    {
-                        fut.boxed_local()
-                    }
-                }
-            }));
-        let request_response_loop_fut = {
-            #[cfg(not(target_family = "wasm"))]
-            {
-                request_response_loop_fut.boxed()
-            }
-            #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-            {
-                request_response_loop_fut.boxed_local()
-            }
-        };
-
-        let responses = (
-            stream::once_future(async move {
-                request_response_loop_fut.await;
-                None
-            }),
-            responses.map(Some),
-        )
-            .merge()
-            .filter_map(|response| response);
-
-        #[cfg(feature = "tracing")]
-        let responses = responses.in_current_span();
-
-        responses
-    }
-}
-
-#[cfg(all(target_os = "wasi", target_env = "p2"))]
-impl<Sink> HttpSource<Sink>
-where
-    Sink: Stream<Item = HttpCommand> + 'static,
-{
-    /// Returns a [`Stream`] that yields responses received from the server.
-    #[cfg_attr(feature = "tracing", instrument(level = "debug", skip(self)))]
-    pub fn responses(&self) -> impl Stream<Item = Result<Response<Bytes>, BoxError>> + use<Sink> {
-        let send_request = self
-            .sink
-            .clone()
-            .filter(|command| matches!(**command, HttpCommand::SendRequest(..)));
-
-        let default_client = send_request.clone().take(1).then({
-            let client_tx = self.client_tx.clone();
-            move |_| {
-                let client_tx = client_tx.clone();
-                async move {
-                    let client = Arc::new(Client::new());
-
-                    #[cfg(feature = "tracing")]
-                    debug!(?client, "using default client");
-
-                    if let Ok(permit) = client_tx.reserve().await {
-                        permit.send(Arc::clone(&client));
-                    }
-
-                    client
-                }
-            }
-        });
-
-        let client = self.client.clone().or(default_client.share());
-
-        let (response_tx, response_rx) = mpsc::channel(RESPONSE_BUFFER_LEN);
-        let responses = ReceiverStream::new(response_rx);
-
-        let request_response_loop_fut = (client, send_request)
-            .zip()
-            .co()
-            .map(Box::new(
-                move |(client, send_request): (Event<ArcClient>, Event<HttpCommand>)| {
-                    async move {
-                        #[allow(irrefutable_let_patterns)]
-                        let HttpCommand::SendRequest(request) = &*send_request else {
-                            unreachable!();
-                        };
-
-                        #[cfg(feature = "tracing")]
-                        debug!(?request, "sending request");
-
-                        let (parts, body) = request.clone().into_parts();
-                        let request = Request::from_parts(parts, body.as_ref().into_body());
-
+                        #[cfg(all(target_os = "wasi", target_env = "p2"))]
                         match client.send(request).await {
                             Ok(response) => {
                                 #[cfg(feature = "tracing")]
@@ -487,32 +398,53 @@ where
                             },
                             Err(err) => Err(err.into()),
                         }
+                    };
+                    #[cfg(not(target_family = "wasm"))]
+                    {
+                        fut.boxed()
                     }
-                    .boxed_local()
+                    #[cfg(target_family = "wasm")]
+                    {
+                        fut.boxed_local()
+                    }
                 },
             ))
             .for_each(Box::new({
                 let response_tx = response_tx.clone();
                 move |response| {
                     let response_tx = response_tx.clone();
-                    async move {
+                    let fut = async move {
                         if let Ok(permit) = response_tx.reserve().await {
                             permit.send(response);
                         }
+                    };
+                    #[cfg(not(target_family = "wasm"))]
+                    {
+                        fut.boxed()
                     }
-                    .boxed_local()
+                    #[cfg(target_family = "wasm")]
+                    {
+                        fut.boxed_local()
+                    }
                 }
-            }))
-            .boxed_local();
+            }));
+        let request_response_loop_fut = {
+            #[cfg(not(target_family = "wasm"))]
+            {
+                request_response_loop_fut.boxed()
+            }
+            #[cfg(target_family = "wasm")]
+            {
+                request_response_loop_fut.boxed_local()
+            }
+        };
 
-        let responses = (
-            stream::once_future(async move {
+        let responses = responses
+            .map(Some)
+            .or(stream::once_future(async move {
                 request_response_loop_fut.await;
                 None
-            }),
-            responses.map(Some),
-        )
-            .merge()
+            }))
             .filter_map(|response| response);
 
         #[cfg(feature = "tracing")]
