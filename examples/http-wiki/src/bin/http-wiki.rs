@@ -73,7 +73,7 @@ async fn main() -> Result<ExitCode> {
                         let headers = req.headers_mut().unwrap();
                         headers.insert(header::USER_AGENT, USER_AGENT.parse().unwrap());
 
-                        req.body(vec![].into()).context("failed to build request")?
+                        req.body("".into()).context("failed to build request")?
                     }))
                 })
             });

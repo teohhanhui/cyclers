@@ -1,10 +1,16 @@
+#[cfg(not(target_family = "wasm"))]
 use std::time::Duration;
 
+#[cfg(not(target_family = "wasm"))]
+use anyhow::Context as _;
 use anyhow::Result;
 use cyclers::driver::Driver as _;
 use cyclers_http::{ClientBuilder, HttpCommand, HttpDriver, HttpSource};
+#[cfg(not(target_family = "wasm"))]
 use futures_concurrency::future::TryJoin as _;
-use futures_lite::{StreamExt as _, pin, stream};
+use futures_lite::stream;
+#[cfg(not(target_family = "wasm"))]
+use futures_lite::{StreamExt as _, pin};
 #[cfg(not(target_family = "wasm"))]
 use tokio::test;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
@@ -33,12 +39,15 @@ async fn it_allows_configuring_client() -> Result<()> {
 }
 
 #[test]
+#[cfg(not(target_family = "wasm"))]
 async fn it_receives_responses() -> Result<()> {
-    let server = httpmock::MockServer::start();
-    let api_mock = server.mock(|when, then| {
-        when.path("/hello");
-        then.status(200).body("world");
-    });
+    let server = httpmock::MockServer::start_async().await;
+    let mock = server
+        .mock_async(|when, then| {
+            when.path("/hello");
+            then.status(200).body("world");
+        })
+        .await;
 
     let sink = stream::iter([
         HttpCommand::from(ClientBuilder::new()),
@@ -46,20 +55,23 @@ async fn it_receives_responses() -> Result<()> {
             http::Request::builder()
                 .method("GET")
                 .uri(server.url("/hello"))
-                .body(vec![].into())?,
+                .body("".into())?,
         ),
     ]);
     let (source, fut): (HttpSource<_>, _) = HttpDriver.call(sink);
 
-    let response = source
+    let responses = source
         .responses()
         .map(|res| res.map_err(anyhow::Error::from_boxed));
-    pin!(response);
+    pin!(responses);
 
     (fut, async move {
-        let response = response.try_next().await?.unwrap();
-        assert_eq!(response.body(), "world".as_bytes());
-        api_mock.assert();
+        let response = responses
+            .try_next()
+            .await?
+            .context("no responses were received")?;
+        assert_eq!(response.body(), "world");
+        mock.assert();
         Ok(())
     })
         .try_join()
@@ -69,19 +81,20 @@ async fn it_receives_responses() -> Result<()> {
 }
 
 #[test]
+#[cfg(not(target_family = "wasm"))]
 async fn it_handles_concurrent_requests() -> Result<()> {
     let server = httpmock::MockServer::start_async().await;
-    let hello_mock = server
+    let mock1 = server
         .mock_async(|when, then| {
             when.path("/hello");
-            then
-                .status(200)
-                .body("world")
-                // Simulates a network delay
-                .delay(Duration::from_secs(1));
+            then.status(200).body("world").delay({
+                // Make sure the response for the first request will not yet be received by the
+                // time the second request is supposed to be sent out.
+                Duration::from_secs(1)
+            });
         })
         .await;
-    let foobar_mock = server
+    let mock2 = server
         .mock_async(|when, then| {
             when.path("/foo");
             then.status(200).body("bar");
@@ -93,27 +106,30 @@ async fn it_handles_concurrent_requests() -> Result<()> {
             http::Request::builder()
                 .method("GET")
                 .uri(server.url("/hello"))
-                .body(vec![].into())?,
+                .body("".into())?,
         ),
         HttpCommand::from(
             http::Request::builder()
                 .method("GET")
                 .uri(server.url("/foo"))
-                .body(vec![].into())?,
+                .body("".into())?,
         ),
     ]);
     let (source, fut): (HttpSource<_>, _) = HttpDriver.call(sink);
 
-    let response = source
+    let responses = source
         .responses()
         .map(|res| res.map_err(anyhow::Error::from_boxed));
-    pin!(response);
+    pin!(responses);
 
     (fut, async {
-        let response = response.try_next().await?.unwrap();
-        assert_eq!(response.body(), "bar".as_bytes());
-        hello_mock.assert();
-        foobar_mock.assert();
+        let response = responses
+            .try_next()
+            .await?
+            .context("no responses were received")?;
+        assert_eq!(response.body(), "bar");
+        mock1.assert();
+        mock2.assert();
         Ok(())
     })
         .try_join()
