@@ -1,0 +1,61 @@
+[package]
+name = "cyclers-webtrans"
+version = "0.1.0"
+authors = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+description = "A cyclers driver for WebTransport"
+readme = "README.md"
+repository = { workspace = true }
+license = { workspace = true }
+keywords = ["cyclers", "webtransport", "datagram", "stream"]
+categories = ["asynchronous", "network-programming", "web-programming", "wasm"]
+
+[dependencies]
+bytes = { workspace = true, features = ["std"] }
+cyclers = { version = "0.1.0", path = "../cyclers", default-features = false, features = [] }
+futures-concurrency = { workspace = true, features = ["std"] }
+futures-lite = { workspace = true, features = ["std"] }
+futures-rx = { workspace = true, features = [] }
+papaya = { workspace = true, features = [] }
+tokio = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true, features = [] }
+tracing = { workspace = true, features = ["attributes", "log", "std"], optional = true }
+tracing-futures = { workspace = true, features = ["futures-03", "std", "std-future"], optional = true }
+url = { workspace = true, features = ["std"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+web-transport-quinn = { workspace = true, features = [] }
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+js-sys = { workspace = true, features = ["std"] }
+wasm-bindgen = { workspace = true, features = ["msrv", "std", "strict-macro"] }
+web-transport-wasm = { workspace = true, features = [] }
+
+[dev-dependencies]
+anyhow = { workspace = true, features = ["std"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test = { workspace = true, features = ["std"] }
+
+[features]
+default = []
+rustls-aws-lc-rs = ["web-transport-quinn/aws-lc-rs"]
+rustls-ring = ["web-transport-quinn/ring"]
+tracing = ["dep:tracing", "dep:tracing-futures"]
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "i686-unknown-linux-gnu",
+    "i686-pc-windows-msvc",
+    "wasm32-unknown-unknown",
+]
