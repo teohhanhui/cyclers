@@ -20,10 +20,10 @@ use crate::util::{head, head_or_tail};
 const SINK_PROXY_BUFFER_LEN: usize = 1;
 
 /// Type alias for a type-erased error type.
-pub type BoxError = Box<dyn Error + Send + Sync>;
+pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
 
 /// Type alias for a type-erased error type that can be cloned.
-pub type ArcError = Arc<dyn Error + Send + Sync>;
+pub type ArcError = Arc<dyn Error + Send + Sync + 'static>;
 
 /// A [pure] `main` function.
 ///
