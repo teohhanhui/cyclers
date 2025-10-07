@@ -53,11 +53,7 @@ async fn main() -> Result<ExitCode> {
                 Err(err) => Some(Err(Arc::clone(err))),
             });
             let session_ids = sessions
-                .filter_map(|session| match &*session {
-                    Ok((session_id, _url)) => Some(*session_id),
-                    Err(_) => None,
-                })
-                .share();
+                .filter_map(|session| session.as_ref().ok().map(|(session_id, _url)| *session_id));
 
             // Read lines of text as input from the terminal.
             let lines = terminal_source
@@ -95,7 +91,7 @@ async fn main() -> Result<ExitCode> {
                 .filter_map(|(session_id, line)| {
                     if line == "/quit" {
                         Some(WebTransportCommand::from(TerminateSessionCommand {
-                            session_id: *session_id,
+                            session_id,
                             code: Default::default(),
                             reason: Default::default(),
                         }))
@@ -129,10 +125,10 @@ async fn main() -> Result<ExitCode> {
                     move |(session_id, message)| {
                         (
                             stream::once(Ok(WebTransportCommand::from(CreateBiStreamCommand {
-                                session_id: *session_id,
+                                session_id,
                                 send_order: Default::default(),
                             }))),
-                            webtrans_source.bi_stream_created(*session_id).then({
+                            webtrans_source.bi_stream_created(session_id).then({
                                 let stream_ids_tx = stream_ids_tx.clone();
                                 move |stream_id| {
                                     let stream_ids_tx = stream_ids_tx.clone();
@@ -199,12 +195,16 @@ async fn main() -> Result<ExitCode> {
                 });
 
             let webtrans_sink = (
-                // Connect to the WebTransport server.
-                establish_session.map(Ok),
-                // Send out any commands or messages.
-                (slash.map(Ok), send_message, establish_session_errors).merge(),
+                (
+                    // Connect to the WebTransport server.
+                    establish_session.map(Ok),
+                    // Send out any commands or messages.
+                    (slash.map(Ok), send_message).merge(),
+                )
+                    .chain(),
+                establish_session_errors,
             )
-                .chain();
+                .merge();
 
             // After reading a line from the terminal, we provide interactive feedback but
             // we do not print the line back out.

@@ -1,0 +1,28 @@
+name: rustc wrapper
+description: Set a RUSTC_WRAPPER which prepends command-line arguments to rustc
+inputs:
+  prepend-args:
+    description: Command-line arguments to prepend to the rustc invocation
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Write rustc-wrapper to file
+      run: |
+        tee "$GITHUB_WORKSPACE/rustc-wrapper" <<'EOF'
+        #!/bin/sh
+        RUSTC="$1"
+        shift
+        if [ "$(basename "$RUSTC")" = 'clippy-driver' ]; then
+          RUSTC_WORKSPACE_WRAPPER="$RUSTC"
+          RUSTC="$1"
+          shift
+        fi
+        exec ${RUSTC_WORKSPACE_WRAPPER:+"$RUSTC_WORKSPACE_WRAPPER"} "$RUSTC" ${{ inputs.prepend-args }} "$@"
+        EOF
+        chmod +x "$GITHUB_WORKSPACE/rustc-wrapper"
+      shell: bash
+    - name: Set RUSTC_WRAPPER
+      run: |
+        echo "RUSTC_WRAPPER=$GITHUB_WORKSPACE/rustc-wrapper" >> "$GITHUB_ENV"
+      shell: bash

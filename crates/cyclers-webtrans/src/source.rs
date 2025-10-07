@@ -4,12 +4,21 @@ use std::rc::Rc;
 use bytes::{Bytes, BytesMut};
 use cyclers::BoxError;
 use cyclers::driver::Source;
+#[cfg(any(
+    all(
+        not(target_family = "wasm"),
+        any(feature = "rustls-aws-lc-rs", feature = "rustls-ring")
+    ),
+    all(target_family = "wasm", target_os = "unknown"),
+))]
+use futures_concurrency::stream::Zip as _;
 use futures_lite::{Stream, StreamExt as _, stream};
-use futures_rx::PublishSubject;
 use futures_rx::stream_ext::share::Shared;
+use futures_rx::{BehaviorSubject, PublishSubject, RxExt as _};
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use js_sys::Symbol;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, mpsc};
+use tokio_stream::wrappers::ReceiverStream;
 #[cfg(feature = "tracing")]
 use tracing::{debug, instrument, trace};
 #[cfg(feature = "tracing")]
@@ -24,13 +33,10 @@ use tracing_futures::Instrument as _;
 use url::Url;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
 use wasm_bindgen::JsValue;
-#[cfg(all(
-    not(target_family = "wasm"),
-    any(feature = "rustls-aws-lc-rs", feature = "rustls-ring")
-))]
-use web_transport_quinn::ClientBuilder;
+#[cfg(not(target_family = "wasm"))]
+use web_transport_quinn::Client;
 #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-use web_transport_wasm::ClientBuilder;
+use web_transport_wasm::Client;
 
 use crate::WebTransportCommand;
 #[cfg(any(
@@ -64,6 +70,10 @@ where
     sink: Shared<Sink, PublishSubject<Sink::Item>>,
     sessions: SessionMap,
     streams: StreamMap,
+    #[cfg(not(target_family = "wasm"))]
+    client: Shared<stream::Boxed<Option<Client>>, BehaviorSubject<Option<Client>>>,
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    client: Shared<stream::BoxedLocal<Option<Client>>, BehaviorSubject<Option<Client>>>,
 }
 
 impl<Sink> Clone for WebTransportSource<Sink>
@@ -75,12 +85,14 @@ where
             sink,
             sessions,
             streams,
+            client,
         } = self;
 
         WebTransportSource {
             sink: sink.clone(),
             sessions: sessions.clone(),
             streams: streams.clone(),
+            client: client.clone(),
         }
     }
 }
@@ -95,11 +107,20 @@ where
         sink: Shared<Sink, PublishSubject<Sink::Item>>,
         sessions: SessionMap,
         streams: StreamMap,
+        client_rx: mpsc::Receiver<Client>,
     ) -> Self {
         Self {
             sink,
             sessions,
             streams,
+            client: {
+                let client = ReceiverStream::new(client_rx).map(Some);
+                #[cfg(not(target_family = "wasm"))]
+                let client = client.boxed();
+                #[cfg(target_family = "wasm")]
+                let client = client.boxed_local();
+                client.share_behavior(None)
+            },
         }
     }
 
@@ -118,7 +139,7 @@ where
     pub fn session_ready(
         &self,
     ) -> impl Stream<Item = Result<(SessionId, Url), EstablishSessionError>> + use<Sink> {
-        let establish_session_commands = self.sink.clone().filter_map(move |command| {
+        let establish_session = self.sink.clone().filter_map(|command| {
             if let WebTransportCommand::EstablishSession(command) = &*command {
                 Some(command.clone())
             } else {
@@ -128,9 +149,12 @@ where
 
         let sessions = self.sessions.clone();
 
-        let session_ready =
-            establish_session_commands.then(move |EstablishSessionCommand { url }| {
+        let client = self.client.clone().filter_map(|client| (*client).clone());
+
+        let session_ready = (client, establish_session).zip().then(
+            move |(client, EstablishSessionCommand { url })| {
                 let sessions = sessions.clone();
+                let client = client.clone();
                 async move {
                     #[cfg(feature = "tracing")]
                     debug!(?url, "establishing session");
@@ -138,9 +162,7 @@ where
                     let (session, session_id) = {
                         #[cfg(not(target_family = "wasm"))]
                         {
-                            let session = ClientBuilder::new()
-                                .with_system_roots()
-                                .map_err(EstablishSessionError)?
+                            let session = client
                                 .connect(url.clone())
                                 .await
                                 .map_err(EstablishSessionError)?;
@@ -151,8 +173,7 @@ where
                         }
                         #[cfg(all(target_family = "wasm", target_os = "unknown"))]
                         {
-                            let session = ClientBuilder::new()
-                                .with_system_roots()
+                            let session = client
                                 .connect(url.clone())
                                 .await
                                 .map_err(EstablishSessionError)?;
@@ -180,7 +201,8 @@ where
 
                     Ok((session_id, url.clone()))
                 }
-            });
+            },
+        );
 
         #[cfg(feature = "tracing")]
         let session_ready = session_ready
@@ -201,7 +223,7 @@ where
         &self,
         session_id: SessionId,
     ) -> impl Stream<Item = Result<StreamId, CreateStreamError>> + use<Sink> {
-        let create_uni_stream_commands = self.sink.clone().filter_map(move |command| {
+        let create_uni_stream = self.sink.clone().filter_map(move |command| {
             if let WebTransportCommand::CreateUniStream(command) = &*command {
                 if command.session_id == session_id {
                     Some(command.clone())
@@ -216,7 +238,7 @@ where
         let sessions = self.sessions.clone();
         let streams = self.streams.clone();
 
-        let uni_stream_created = create_uni_stream_commands.then(
+        let uni_stream_created = create_uni_stream.then(
             move |CreateUniStreamCommand {
                       session_id,
                       send_order,
@@ -239,10 +261,7 @@ where
                             inner: BoxError::from("could not find session"),
                         });
                     };
-                    #[cfg(not(target_family = "wasm"))]
                     let session = session.read().await;
-                    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-                    let mut session = session.write().await;
 
                     let tx = session.open_uni().await.map_err(|err| CreateStreamError {
                         kind: CreateStreamErrorKind::InvalidTransportState,
@@ -294,7 +313,7 @@ where
         &self,
         session_id: SessionId,
     ) -> impl Stream<Item = Result<StreamId, CreateStreamError>> + use<Sink> {
-        let create_bi_stream_commands = self.sink.clone().filter_map(move |command| {
+        let create_bi_stream = self.sink.clone().filter_map(move |command| {
             if let WebTransportCommand::CreateBiStream(command) = &*command {
                 if command.session_id == session_id {
                     Some(command.clone())
@@ -309,7 +328,7 @@ where
         let sessions = self.sessions.clone();
         let streams = self.streams.clone();
 
-        let bi_stream_created = create_bi_stream_commands.then(
+        let bi_stream_created = create_bi_stream.then(
             move |CreateBiStreamCommand {
                       session_id,
                       send_order,
@@ -332,10 +351,7 @@ where
                             inner: BoxError::from("could not find session"),
                         });
                     };
-                    #[cfg(not(target_family = "wasm"))]
                     let session = session.read().await;
-                    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-                    let mut session = session.write().await;
 
                     let (tx, rx) = session.open_bi().await.map_err(|err| CreateStreamError {
                         kind: CreateStreamErrorKind::InvalidTransportState,
@@ -407,10 +423,7 @@ where
                         (),
                     ));
                 };
-                #[cfg(not(target_family = "wasm"))]
                 let session = session.read().await;
-                #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-                let mut session = session.write().await;
 
                 let rx = match session.accept_uni().await {
                     Ok(rx) => rx,
@@ -478,10 +491,7 @@ where
                         (),
                     ));
                 };
-                #[cfg(not(target_family = "wasm"))]
                 let session = session.read().await;
-                #[cfg(all(target_family = "wasm", target_os = "unknown"))]
-                let mut session = session.write().await;
 
                 let (tx, rx) = match session.accept_bi().await {
                     Ok((tx, rx)) => (tx, rx),
