@@ -564,7 +564,7 @@ where
     let (sources, drivers_fut) = drivers.call(proxy_receivers);
 
     let run = async |sinks: Snk| {
-        let (_, out) = (sinks.proxy(proxy_senders), drivers_fut).try_join().await?;
+        let (out, _) = (drivers_fut, sinks.proxy(proxy_senders)).try_join().await?;
 
         Ok(out)
     };

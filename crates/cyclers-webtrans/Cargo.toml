@@ -19,6 +19,7 @@ futures-lite = { workspace = true, features = ["std"] }
 futures-rx = { workspace = true, features = [] }
 papaya = { workspace = true, features = [] }
 tokio = { workspace = true, features = ["sync"] }
+tokio-stream = { workspace = true, features = [] }
 tokio-util = { workspace = true, features = [] }
 tracing = { workspace = true, features = ["attributes", "log", "std"], optional = true }
 tracing-futures = { workspace = true, features = ["futures-03", "std", "std-future"], optional = true }
@@ -34,8 +35,13 @@ web-transport-wasm = { workspace = true, features = [] }
 
 [dev-dependencies]
 anyhow = { workspace = true, features = ["std"] }
+cyclers-webtrans = { path = ".", default-features = false, features = ["rustls-aws-lc-rs", "tracing"] }
+rustls-pki-types = { workspace = true, features = ["std"] }
+test-log = { workspace = true, features = ["color", "trace"] }
+tracing-subscriber = { workspace = true, features = ["ansi", "env-filter", "fmt", "smallvec", "std", "tracing-log"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+rcgen = { workspace = true, features = ["aws_lc_rs", "crypto"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]

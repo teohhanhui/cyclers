@@ -32,5 +32,5 @@ arithmetic_side_effects = "warn"
 unused_trait_names = "warn"
 
 [patch.crates-io]
+futures-lite = { git = "https://github.com/vkrivopalov/futures-lite", branch = "129" }
 futures-rx = { git = "https://github.com/teohhanhui/rxrs", branch = "feat/shared-arc-mutex" }
-web-transport-quinn = { git = "https://github.com/teohhanhui/web-transport-rs", branch = "fix/feature-combinations" }

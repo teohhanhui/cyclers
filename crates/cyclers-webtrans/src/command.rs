@@ -1,15 +1,30 @@
+use std::any::type_name_of_val;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use std::cell::RefCell;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use std::convert::Infallible;
+use std::fmt;
 use std::num::TryFromIntError;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use std::rc::Rc;
+#[cfg(not(target_family = "wasm"))]
+use std::sync::Arc;
 
 use bytes::Bytes;
 use cyclers::BoxError;
 use url::Url;
+#[cfg(not(target_family = "wasm"))]
+use web_transport_quinn::Client;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+use web_transport_wasm::Client;
 
 use crate::session::SessionId;
 use crate::stream::StreamId;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum WebTransportCommand {
+    ConfigureClient(ConfigureClientCommand),
     /// Create a new WebTransport session given a URI [[RFC3986]] of the
     /// requester.
     ///
@@ -66,6 +81,24 @@ pub enum WebTransportCommand {
     /// [The WebTransport Protocol Framework, Section 4.3]: https://datatracker.ietf.org/doc/html/draft-ietf-webtrans-overview#section-4.3
     SendBytes(SendBytesCommand),
 }
+
+#[derive(Clone)]
+pub struct ConfigureClientCommand(pub(crate) ConfigureClientFn);
+
+#[cfg(not(target_family = "wasm"))]
+type ConfigureClientFn = Arc<
+    std::sync::Mutex<
+        Option<Box<dyn FnOnce() -> Result<Client, ConfigureClientError> + Send + Sync>>,
+    >,
+>;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+type ConfigureClientFn =
+    Rc<RefCell<Option<Box<dyn FnOnce() -> Result<Client, ConfigureClientError>>>>>;
+
+#[cfg(not(target_family = "wasm"))]
+pub(crate) type ConfigureClientError = web_transport_quinn::ClientError;
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+pub(crate) type ConfigureClientError = Infallible;
 
 /// Create a new WebTransport session given a URI [[RFC3986]] of the
 /// requester.
@@ -178,6 +211,40 @@ pub struct SendBytesCommand {
     pub stream_id: StreamId,
     pub bytes: Bytes,
     pub finished: bool,
+}
+
+impl fmt::Debug for ConfigureClientCommand {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ConfigureClientCommand")
+            .field(&format_args!("{}", type_name_of_val(&self.0)))
+            .finish()
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl<F> From<F> for ConfigureClientCommand
+where
+    F: FnOnce() -> Result<Client, ConfigureClientError> + Send + Sync + 'static,
+{
+    fn from(f: F) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(Some(Box::new(f)))))
+    }
+}
+
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+impl<F> From<F> for ConfigureClientCommand
+where
+    F: FnOnce() -> Result<Client, ConfigureClientError> + 'static,
+{
+    fn from(f: F) -> Self {
+        Self(Rc::new(RefCell::new(Some(Box::new(f)))))
+    }
+}
+
+impl From<ConfigureClientCommand> for WebTransportCommand {
+    fn from(command: ConfigureClientCommand) -> Self {
+        Self::ConfigureClient(command)
+    }
 }
 
 impl From<EstablishSessionCommand> for WebTransportCommand {

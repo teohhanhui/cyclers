@@ -16,8 +16,6 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -Dwarnings
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain (nightly)
@@ -33,6 +31,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Set RUSTC_WRAPPER
+        uses: ./.github/actions/rustc-wrapper
+        with:
+          prepend-args: -Dwarnings
       - name: Check crates
         run: cargo clippy --workspace --all-targets --all-features
       - name: Check crates (wasm32-unknown-unknown)
@@ -41,6 +43,7 @@ jobs:
             -p cyclers \
             -p cyclers-http \
             -p cyclers-webrtc \
+            -p cyclers-webtrans \
             --all-targets --all-features
       - name: Check crates (wasm32-wasip2)
         run: |
@@ -66,8 +69,6 @@ jobs:
 
   check-feature-combinations:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: -Dwarnings
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@v1
@@ -81,6 +82,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Set RUSTC_WRAPPER
+        uses: ./.github/actions/rustc-wrapper
+        with:
+          prepend-args: -Dwarnings
       - name: Check crates
         run: cargo hack check --feature-powerset --workspace --keep-going
 
@@ -95,7 +100,6 @@ jobs:
       fail-fast: false
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: -Dwarnings
       RUST_BACKTRACE: short
     steps:
       - uses: actions/checkout@v4
@@ -116,6 +120,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Set RUSTC_WRAPPER
+        uses: ./.github/actions/rustc-wrapper
+        with:
+          prepend-args: -Dwarnings
       - name: Test crates
         run: cargo test --workspace --all-targets --all-features
       - name: Test crates (wasm32-unknown-unknown)
@@ -124,6 +132,7 @@ jobs:
             -p cyclers \
             -p cyclers-http \
             -p cyclers-webrtc \
+            -p cyclers-webtrans \
             --all-targets --all-features
       - name: Test crates (wasm32-wasip2)
         run: |
@@ -178,7 +187,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: allow
-      RUSTFLAGS: -Dwarnings
       RUST_BACKTRACE: short
     steps:
       - uses: actions/checkout@v4
@@ -190,6 +198,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Update dependencies
         run: cargo update --verbose
+      - name: Set RUSTC_WRAPPER
+        uses: ./.github/actions/rustc-wrapper
+        with:
+          prepend-args: -Dwarnings
       - name: Build crates
         run: cargo build --workspace --all-targets --all-features --verbose
       - name: Test crates
