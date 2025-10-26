@@ -10,6 +10,7 @@ rust-version = "1.87.0"
 [workspace.dependencies]
 anyhow = { version = "1.0.95", default-features = false }
 bytes = { version = "1.9.0", default-features = false }
+console-subscriber = { version = "0.4.1", default-features = false }
 futures-concurrency = { version = "7.6.3", default-features = false }
 futures-lite = { version = "2.5.0", default-features = false }
 futures-rx = { version = "0.2.1", default-features = false }

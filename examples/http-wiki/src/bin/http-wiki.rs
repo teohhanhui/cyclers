@@ -19,6 +19,10 @@ use http::header;
 #[cfg(not(target_family = "wasm"))]
 use tokio::main;
 use tracing::debug;
+#[cfg(target_family = "wasm")]
+use tracing_subscriber::layer::Layer;
+#[cfg(not(target_family = "wasm"))]
+use tracing_subscriber::layer::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use url::Url;
@@ -231,22 +235,36 @@ async fn main() -> Result<ExitCode> {
 
 fn init_tracing_subscriber() {
     tracing_subscriber::registry()
+        .with({
+            #[cfg(not(target_family = "wasm"))]
+            {
+                Some(console_subscriber::spawn().boxed())
+            }
+            #[cfg(target_family = "wasm")]
+            {
+                None::<Box<dyn Layer<_> + Send + Sync + 'static>>
+            }
+        })
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                #[cfg(not(debug_assertions))]
-                {
-                    "info".into()
-                }
-                #[cfg(debug_assertions)]
-                {
-                    format!(
-                        "{crate}=debug,cyclers=debug,cyclers_http=debug,cyclers_terminal=debug",
-                        crate = env!("CARGO_CRATE_NAME"),
-                    )
-                    .into()
-                }
-            }),
+            tracing_subscriber::fmt::layer()
+                .with_writer(io::stderr)
+                .with_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                        #[cfg(not(debug_assertions))]
+                        {
+                            "info".into()
+                        }
+                        #[cfg(debug_assertions)]
+                        {
+                            format!(
+                                "{crate}=debug,cyclers=debug,cyclers_http=debug,\
+                                 cyclers_terminal=debug,info",
+                                crate = env!("CARGO_CRATE_NAME"),
+                            )
+                            .into()
+                        }
+                    }),
+                ),
         )
-        .with(tracing_subscriber::fmt::layer().with_writer(io::stderr))
         .init();
 }

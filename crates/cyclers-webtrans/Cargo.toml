@@ -51,7 +51,7 @@ wasm-bindgen-test = { workspace = true, features = ["std"] }
 default = []
 rustls-aws-lc-rs = ["web-transport-quinn/aws-lc-rs"]
 rustls-ring = ["web-transport-quinn/ring"]
-tracing = ["dep:tracing", "dep:tracing-futures"]
+tracing = ["dep:tracing", "dep:tracing-futures", "tokio/rt", "tokio/tracing"]
 
 [lints]
 workspace = true
