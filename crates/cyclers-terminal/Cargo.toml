@@ -39,7 +39,7 @@ tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]
 default = []
-tracing = ["dep:tracing", "dep:tracing-futures"]
+tracing = ["dep:tracing", "dep:tracing-futures", "tokio/rt", "tokio/tracing"]
 
 [lints]
 workspace = true
