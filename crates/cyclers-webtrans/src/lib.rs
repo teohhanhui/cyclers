@@ -1,5 +1,7 @@
-#[cfg(all(target_family = "wasm", not(target_os = "unknown")))]
-compile_error!("wasm targets other than wasm32-unknown-unknown are not supported");
+#![cfg(any(
+    not(target_family = "wasm"),
+    all(target_family = "wasm", target_os = "unknown")
+))]
 
 pub use self::command::WebTransportCommand;
 pub use self::driver::WebTransportDriver;

@@ -1,3 +1,8 @@
+#![cfg(any(
+    not(target_family = "wasm"),
+    all(target_family = "wasm", target_os = "unknown")
+))]
+
 use anyhow::Result;
 use cyclers::driver::Driver as _;
 use cyclers_webrtc::{WebRtcCommand, WebRtcDriver, WebRtcSource};

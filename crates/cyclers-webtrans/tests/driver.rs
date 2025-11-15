@@ -1,3 +1,8 @@
+#![cfg(any(
+    not(target_family = "wasm"),
+    all(target_family = "wasm", target_os = "unknown")
+))]
+
 #[cfg(not(target_family = "wasm"))]
 use std::sync::Arc;
 

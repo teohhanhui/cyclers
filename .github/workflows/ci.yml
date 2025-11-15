@@ -38,28 +38,13 @@ jobs:
       - name: Check crates
         run: cargo clippy --workspace --all-targets --all-features
       - name: Check crates (wasm32-unknown-unknown)
-        run: |
-          cargo clippy --target wasm32-unknown-unknown \
-            -p cyclers \
-            -p cyclers-http \
-            -p cyclers-webrtc \
-            -p cyclers-webtrans \
-            --all-targets --all-features
+        run: cargo clippy --target wasm32-unknown-unknown --all-targets --all-features
       - name: Check crates (wasm32-wasip2)
-        run: |
-          cargo clippy --target wasm32-wasip2 \
-            -p cyclers \
-            -p cyclers-http \
-            -p cyclers-terminal \
-            --all-targets --all-features
+        run: cargo clippy --target wasm32-wasip2 --all-targets --all-features
       - name: Check examples
         run: cargo clippy --manifest-path examples/Cargo.toml --workspace --all-targets --all-features
       - name: Check examples (wasm32-wasip2)
-        run: |
-          cargo clippy --target wasm32-wasip2 --manifest-path examples/Cargo.toml \
-            -p example-http-wiki \
-            -p example-terminal-echo \
-            --all-targets --all-features
+        run: cargo clippy --target wasm32-wasip2 --manifest-path examples/Cargo.toml --all-targets --all-features
       - name: Uncomment all in .rustfmt.toml
         run: sed -r 's/^# *//g' -i .rustfmt.toml
       - name: rustfmt crates
@@ -127,20 +112,9 @@ jobs:
       - name: Test crates
         run: cargo test --workspace --all-targets --all-features
       - name: Test crates (wasm32-unknown-unknown)
-        run: |
-          cargo test --target wasm32-unknown-unknown \
-            -p cyclers \
-            -p cyclers-http \
-            -p cyclers-webrtc \
-            -p cyclers-webtrans \
-            --all-targets --all-features
+        run: cargo test --target wasm32-unknown-unknown --all-targets --all-features
       - name: Test crates (wasm32-wasip2)
-        run: |
-          cargo test --target wasm32-wasip2 \
-            -p cyclers \
-            -p cyclers-http \
-            -p cyclers-terminal \
-            --all-targets --all-features
+        run: cargo test --target wasm32-wasip2 --all-targets --all-features
       - name: Test examples
         if: ${{ matrix.toolchain != 'nightly' }}
         run: cargo test --manifest-path examples/Cargo.toml --workspace --all-targets --all-features
