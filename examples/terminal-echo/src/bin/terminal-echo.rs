@@ -3,6 +3,17 @@
 //! ```shell
 //! cargo run --bin terminal-echo
 //! ```
+#![cfg_attr(
+    all(
+        target_family = "wasm",
+        not(all(target_os = "wasi", target_env = "p2"))
+    ),
+    no_main
+)]
+#![cfg(any(
+    not(target_family = "wasm"),
+    all(target_os = "wasi", target_env = "p2")
+))]
 
 use std::io;
 use std::process::ExitCode;
