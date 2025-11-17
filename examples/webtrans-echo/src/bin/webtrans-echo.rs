@@ -3,6 +3,8 @@
 //! ```shell
 //! cargo run --bin webtrans-echo
 //! ```
+#![cfg_attr(target_family = "wasm", no_main)]
+#![cfg(not(target_family = "wasm"))]
 
 use std::io;
 use std::process::ExitCode;

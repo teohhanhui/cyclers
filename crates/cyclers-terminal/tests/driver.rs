@@ -1,3 +1,8 @@
+#![cfg(any(
+    not(target_family = "wasm"),
+    all(target_os = "wasi", target_env = "p2")
+))]
+
 use std::process::ExitCode;
 
 use anyhow::Result;
